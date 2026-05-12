@@ -1,0 +1,36 @@
+# 系统文件
+.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+
+# 日志和缓存
+*.log
+npm-debug.log
+yarn-error.log
+.env.local
+.env.*.local
+
+# 构建输出（但保留 pom.xml 等源文件）
+dist
+build
+node_modules
+
+# 大型数据目录
+milvus_data/
+minio_data/
+ollama_data/
+chroma_db/
+logs/
+test/
+tests/
+
+# 脚本和配置（不需要打包到镜像）
+*.sh
+*.bat
+.dockerignore
+docker-compose*.yml
+
+# Markdown文档（不需要在镜像中）
+*.md

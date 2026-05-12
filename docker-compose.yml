@@ -1,0 +1,334 @@
+# LS-ZGT 统一开发环境
+# 启动命令: docker compose up
+# 停止命令: docker compose down
+
+services:
+  # ==================== LLM 推理服务 ====================
+
+  # llama.cpp server - Chat Model（GPU 加速，对话模型专用）
+  # 支持 Qwen3.5-9B-VLM：同时具备对话和视觉理解能力
+  llama-chat:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-chat
+    ports:
+      - "8081:8080"
+    volumes:
+      # 上级目录的 models 文件夹
+      - ../models:/models
+      # llama.cpp 缓存
+      - ./backend/llama-cache/chat:/root/.cache/llama
+    environment:
+      # 主模型：Qwen3.5-9B-VLM（带视觉投影器的 GGUF）
+      - MODEL_PATH=${LLM_CHAT_MODEL_PATH:-/models/gguf/Qwen3.5-9B-VLM-Q4_K_M-GGUF/Qwen3.5-9B-Q4_K_M.gguf}
+      # 视觉投影器（mmproj）：FP16 精度（约 918MB），必须加载才能启用视觉能力
+      - MMproj=${MMproj:-/models/gguf/Qwen3.5-9B-VLM-Q4_K_M-GGUF/mmproj-F16.gguf}
+    # VLM 视觉推理参数（提升 OCR / 文档理解质量）
+    # --image-min-tokens 2048 : 最小视觉 token 数，确保细节丰富
+    # --image-max-tokens 8192 : 最大视觉 token 数，支持高分辨率/复杂页面
+    command: >
+      -m /models/gguf/Qwen3.5-9B-VLM-Q4_K_M-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+      --port 8080
+      --host 0.0.0.0
+      -ngl 100
+      -c 8192
+      --reasoning off
+      --reasoning-format deepseek
+      --mmproj /models/gguf/Qwen3.5-9B-VLM-Q4_K_M-GGUF/mmproj-F16.gguf
+      --image-min-tokens 2048
+      --image-max-tokens 8192
+      --repeat-penalty 1.1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 6G
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # llama.cpp server - Embedding Model（GPU 加速，向量模型专用）
+  llama-embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-embedding
+    ports:
+      - "8082:8080"
+    volumes:
+      # 上级目录的 models 文件夹
+      - ../models:/models
+      # llama.cpp 缓存
+      - ./backend/llama-cache/embedding:/root/.cache/llama
+    environment:
+      - MODEL_PATH=${LLM_EMBEDDING_MODEL_PATH:-/models/gguf/nomic-embed-text-v2-moe.Q4_K_M-gguf/nomic-embed-text-v2-moe.Q4_K_M.gguf}
+    command: -m /models/gguf/nomic-embed-text-v2-moe.Q4_K_M-gguf/nomic-embed-text-v2-moe.Q4_K_M.gguf --port 8080 --host 0.0.0.0 -ngl 100 -c 8192 -b 8192 --embedding
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ==================== 核心服务 ====================
+
+  # 前端 (热更新开发)
+  frontend:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://backend:8080/api
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # 后端 (使用 Java 21 构建)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend/knowledge_base:/app/knowledge_base
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./backend/src/main/resources/application.yml:/app/src/main/resources/application.yml
+      # 宿主机模型目录映射（上级目录的 /models 文件夹）
+      - ../models:/host_models
+      # VLM OCR 使用：需要能访问 llama-chat 服务的 VLM 能力
+      # 在宿主机上通过 host.docker.internal 访问，或通过 Docker 网络
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - LLM_PROVIDER=${LLM_PROVIDER:-local}
+      - LLM_LOCAL_URL=${LLM_LOCAL_URL:-http://llama-chat:8080}
+      - LLM_EMBEDDING_URL=${LLM_EMBEDDING_URL:-http://llama-embedding:8080}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-None}
+      - LLM_EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL:-nomic-embed-text}
+      # VLM OCR 配置（调用宿主机上的 llama-chat 服务）
+      - VLM_OCR_URL=${VLM_OCR_URL:-http://host.docker.internal:8081}
+      - VLM_OCR_ENABLED=${VLM_OCR_ENABLED:-true}
+      - VLM_OCR_TIMEOUT=${VLM_OCR_TIMEOUT:-120}
+      # Docling 服务配置
+      - DOCLING_URL=${DOCLING_URL:-http://docling-service:8001}
+      - DOCLING_ENABLED=${DOCLING_ENABLED:-true}
+    networks:
+      - app-network
+    depends_on:
+      llama-chat:
+        condition: service_healthy
+      llama-embedding:
+        condition: service_healthy
+      docling-service:
+        condition: service_started
+
+  # ==================== 文档解析服务 ====================
+
+  # IBM Docling 文档解析服务（主力解析器）
+  # 优势：高精度表格识别(97.9%)、原生数字文档结构化解析
+  # GPU 配置：与 llama-chat 共享 GPU，Docling 使用部分 GPU 进行 OCR 加速
+  docling-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.docling
+    container_name: docling-service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend/knowledge_base:/app/data:ro
+      - ./backend/logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8001
+      - DOCLING_ENABLED=true
+      - DOCLING_OUTPUT_FORMAT=markdown
+      - DOCLING_OCR=true
+      - DOCLING_MAX_FILE_SIZE_MB=100
+      - DOCLING_TESSERACT_LANGS=en,zh
+      - DOCLING_PDF_BACKEND=pypdf
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: 2G
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+
+  # CAD/BIM 解析服务（可选，按需启用）
+  # cad-parser:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile.cad-parser
+  #   container_name: cad-parser
+  #   ports:
+  #     - "5001:5001"
+  #   volumes:
+  #     - ./backend/knowledge_base:/app/data
+  #     - ./backend/logs:/app/logs
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+
+  # bim-parser:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile.bim-parser
+  #   container_name: bim-parser
+  #   ports:
+  #     - "5002:5002"
+  #   volumes:
+  #     - ./backend/knowledge_base:/app/data
+  #     - ./backend/logs:/app/logs
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+
+  # PDF-Extract-Kit（可选，Docling 已替代其大部分能力）
+  # pdf-extract-kit:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile.pdf-extract-kit
+  #   container_name: pdf-extract-kit
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./backend/pdf_extract_api.py:/app/pdf_extract_api.py:ro
+  #     - ./backend/knowledge_base:/app/data
+  #     - ./backend/logs:/app/logs
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - FLASK_DEBUG=0
+  #     - OMP_NUM_THREADS=4
+  #     - MKL_NUM_THREADS=4
+  #     - OPENBLAS_NUM_THREADS=4
+  #     - VECLIB_MAXIMUM_THREADS=4
+  #     - NUMEXPR_NUM_THREADS=4
+  #     - PYTHONUNBUFFERED=1
+  #     - MALLOC_TRIM_THRESHOLD_=131072
+  #     - MALLOC_MMAP_THRESHOLD_=131072
+  #     - MALLOC_MMAP_MAX_=65536
+  #     - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+  #     - CUDA_VISIBLE_DEVICES=""
+  #     - TOKENIZERS_PARALLELISM=false
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 16G
+  #         cpus: '8.0'
+  #       reservations:
+  #         memory: 8G
+  #         cpus: '4.0'
+  #   shm_size: 4G
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # ==================== 向量数据库 ====================
+
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./backend/milvus_data/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    networks:
+      - app-network
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - ./backend/milvus_data/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - app-network
+
+  milvus-standalone:
+    image: milvusdb/milvus:v2.4.0
+    container_name: milvus-standalone
+    command: ["milvus", "run", "standalone"]
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - ./backend/milvus_data/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  app-network:
+    driver: bridge

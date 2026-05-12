@@ -1,0 +1,46 @@
+FROM python:3.9-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 设置pip镜像源
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
+    && pip config set global.trusted-host mirrors.aliyun.com
+
+# 安装系统依赖（优化安装顺序）
+# 注：libatlas-base-dev 在 Debian Trixie 中已移除，由 libopenblas-dev 替代
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libxml2-dev \
+    libxslt-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libtiff-dev \
+    libwebp-dev \
+    libopenblas-dev \
+    liblapack-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖文件
+COPY requirements-cad-bim.txt .
+
+# 安装Python依赖（使用缓存）
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-cad-bim.txt
+
+# 复制BIM解析服务代码
+COPY bim_parser_service.py .
+
+# 创建数据目录
+RUN mkdir -p /app/data /app/logs
+
+# 暴露端口
+EXPOSE 5002
+
+# 启动命令
+CMD ["python", "bim_parser_service.py"]
+
+

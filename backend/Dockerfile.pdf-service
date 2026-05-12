@@ -1,0 +1,6 @@
+FROM python:3.10-slim
+WORKDIR /app
+RUN pip install --no-cache-dir flask pymupdf
+COPY pdf_extract_api.py .
+EXPOSE 8000
+CMD ["python", "pdf_extract_api.py"]

@@ -1,0 +1,105 @@
+# Docker 环境专用配置
+server:
+  port: 8080
+
+spring:
+  application:
+    name: luanshu-agent-backend
+  main:
+    allow-bean-definition-overriding: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+  webflux:
+    static-path-pattern: /static/**
+  resources:
+    static-locations: classpath:/static/,classpath:/public/
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+  security:
+    user:
+      name: admin
+      password: admin
+
+app:
+  knowledge-base:
+    path: /app/knowledge_base
+  milvus:
+    host: milvus-standalone
+    port: 19530
+    username: root
+    password: milvus
+    database: default
+    connection-timeout: 5000
+    search-timeout: 10000
+    max-retry: 2
+    retry-interval: 500
+  jwt:
+    secret: ls-zgt-test-secret-key-for-local-testing-2024
+    expiration: 604800000
+  pdf:
+    extract:
+      kit:
+        url: http://pdf-service:8000/api/parse
+        enabled: true
+        timeout: 1800
+  llm:
+    provider: local
+    local-url: http://llama-chat:8080
+    embedding-url: http://llama-embedding:8080
+    cloud-provider: openai
+    cloud-api-key: ""
+    cloud-base-url: https://api.openai.com/v1
+    chat-model: all
+    embedding-model: nomic-embed-text
+    temperature: 0.7
+    max-tokens: 2048
+  cad-parser:
+    url: http://cad-parser:5001
+  bim-parser:
+    url: http://bim-parser:5002
+  performance:
+    max-search-results: 20
+    max-context-length: 4000
+    enable-caching: true
+    cache-ttl: 300
+  tenant:
+    default-tenant-id: default
+    storage-mode: local
+    default-kb-path: /app/default_kb
+    tenant-kb-path: /data/knowledge_base/tenants
+    enable-license-check: false
+    license-key: ""
+  intent-filter:
+    enabled: true
+    max-query-length: 1500
+    truncate-query-length: 800
+    similarity-threshold: 3.5
+  chat-session:
+    ttl-minutes: 30
+    max-history-turns: 10
+
+logging:
+  level:
+    com.luanshuai.agent: DEBUG
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+    org.springframework.boot: INFO
+    io.netty: WARN
+    io.milvus: WARN
+    io.milvus.client: WARN
+    io.milvus.grpc: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} | %msg%n"
+logging.level.org.apache.poi: ERROR
+logging.level.org.apache.poi.hwpf: ERROR
+logging.level.org.apache.poi.hwpf.converter: ERROR
+
+wechat:
+  official-account:
+    app-id: wxc2f0bf1f668e5e72
+    app-secret: your-wechat-app-secret
+    token: luanshuai2024
+    encoding-aes-key: luanshu2024abcdefghijklmnopqrstuvwxyz123456

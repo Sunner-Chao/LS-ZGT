@@ -1,0 +1,58 @@
+# Docling Service Dockerfile
+# 基于 IBM Docling + Python 3.11 + CUDA GPU 支持
+# 构建：docker build -f Dockerfile.docling -t docling-service .
+# 运行：docker run -p 8001:8001 --rm docling-service
+
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# 预装系统依赖（Tesseract OCR + 字体支持）
+# 注意：不切换 ubuntu 镜像源，使用默认官方源
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    tesseract-ocr \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-eng \
+    fonts-noto-cjk \
+    libgl1 \
+    libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# 安装 Docling 及依赖
+# 注意：必须用 python3.11 -m pip，避免 pip 误指向系统 python3.10
+RUN /usr/bin/python3.11 -m pip install --no-cache-dir \
+    docling \
+    flask \
+    gunicorn \
+    Pillow
+
+# 配置 HuggingFace 清华镜像
+ENV HF_ENDPOINT=https://hf-mirror.com
+ENV HF_HUB_OFFLINE=0
+ENV TRANSFORMERS_OFFLINE=0
+
+# 复制服务代码
+COPY docling_service.py /app/
+
+# 环境变量
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8001
+ENV DOCLING_ENABLED=true
+ENV DOCLING_OUTPUT_FORMAT=markdown
+ENV DOCLING_OCR=true
+ENV DOCLING_MAX_FILE_SIZE_MB=100
+ENV CUDA_VISIBLE_DEVICES=0
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+
+EXPOSE 8001
+
+CMD ["python", "docling_service.py"]

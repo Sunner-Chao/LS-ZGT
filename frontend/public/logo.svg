@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- 白底 -->
+  <rect width="128" height="128" rx="12" fill="#FFFFFF"/>
+  
+  <!-- 蓝色建筑图标 - 填满背景 -->
+  <g transform="translate(64, 64)">
+    <!-- 屋顶 - 更大更突出 -->
+    <path d="M-50,-8 L0,-52 L50,-8 Z" fill="#2563EB"/>
+    
+    <!-- 建筑主体 - 几乎占满 -->
+    <rect x="-48" y="-8" width="96" height="55" rx="4" fill="#2563EB"/>
+    
+    <!-- 门 - 更大 -->
+    <rect x="-22" y="10" width="44" height="37" rx="3" fill="#FFFFFF"/>
+    <!-- 门中线 -->
+    <line x1="0" y1="10" x2="0" y2="47" stroke="#2563EB" stroke-width="2.5"/>
+    
+    <!-- 左窗 - 更大 -->
+    <rect x="-36" y="0" width="18" height="16" rx="3" fill="#FFFFFF"/>
+    <!-- 右窗 - 更大 -->
+    <rect x="18" y="0" width="18" height="16" rx="3" fill="#FFFFFF"/>
+    
+    <!-- 屋顶装饰线 -->
+    <line x1="-35" y1="-18" x2="0" y2="-48" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <line x1="35" y1="-18" x2="0" y2="-48" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

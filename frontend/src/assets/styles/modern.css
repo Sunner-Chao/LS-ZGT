@@ -1,0 +1,1490 @@
+/* ========================================
+   LS-ZGT 建筑行业规范检索平台设计系统
+   风格: 极简瑞士 + 建筑行业特色
+   配色: 专业蓝 + 工业灰
+   ======================================== */
+
+/* ========================================
+   1. 设计令牌 (Design Tokens)
+   ======================================== */
+
+:root {
+  /* 主色调 - 工业灰系 (Slate) */
+  --primary-50: #f8fafc;
+  --primary-100: #f1f5f9;
+  --primary-200: #e2e8f0;
+  --primary-300: #cbd5e1;
+  --primary-400: #94a3b8;
+  --primary-500: #64748b;
+  --primary-600: #475569;
+  --primary-700: #334155;
+  --primary-800: #1e293b;
+  --primary-900: #0f172a;
+  --primary-950: #020617;
+
+  /* 品牌主色 - 专业蓝 */
+  --primary-color: #3b82f6;
+  --primary-light: #60a5fa;
+  --primary-dark: #2563eb;
+  --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  --primary-gradient-light: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  --primary-gradient-dark: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+
+  /* 强调色 - 天蓝色 */
+  --accent-50: #eff6ff;
+  --accent-100: #dbeafe;
+  --accent-200: #bfdbfe;
+  --accent-300: #93c5fd;
+  --accent-400: #60a5fa;
+  --accent-500: #3b82f6;
+  --accent-600: #2563eb;
+  --accent-700: #1d4ed8;
+  --accent-800: #1e40af;
+  --accent-900: #1e3a8a;
+
+  /* 成功色 - 翠绿 */
+  --success-50: #ecfdf5;
+  --success-100: #d1fae5;
+  --success-200: #a7f3d0;
+  --success-300: #6ee7b7;
+  --success-400: #34d399;
+  --success-500: #10b981;
+  --success-600: #059669;
+  --success-700: #047857;
+  --success-800: #065f46;
+  --success-900: #064e3b;
+  --success-color: #10b981;
+
+  /* 警告色 - 琥珀 */
+  --warning-50: #fffbeb;
+  --warning-100: #fef3c7;
+  --warning-200: #fde68a;
+  --warning-300: #fcd34d;
+  --warning-400: #fbbf24;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+  --warning-800: #92400e;
+  --warning-900: #78350f;
+  --warning-color: #f59e0b;
+
+  /* 错误色 - 玫红 */
+  --error-50: #fef2f2;
+  --error-100: #fee2e2;
+  --error-200: #fecaca;
+  --error-300: #fca5a5;
+  --error-400: #f87171;
+  --error-500: #ef4444;
+  --error-600: #dc2626;
+  --error-700: #b91c1c;
+  --error-800: #991b1b;
+  --error-900: #7f1d1d;
+  --danger-color: #ef4444;
+
+  /* 信息色 */
+  --info-50: #eff6ff;
+  --info-100: #dbeafe;
+  --info-200: #bfdbfe;
+  --info-300: #93c5fd;
+  --info-400: #60a5fa;
+  --info-500: #3b82f6;
+  --info-600: #2563eb;
+  --info-700: #1d4ed8;
+  --info-800: #1e40af;
+  --info-900: #1e3a8a;
+  --info-color: #3b82f6;
+
+  /* 中性色系 */
+  --gray-50: #fafafa;
+  --gray-100: #f4f4f5;
+  --gray-200: #e4e4e7;
+  --gray-300: #d4d4d8;
+  --gray-400: #a1a1aa;
+  --gray-500: #71717a;
+  --gray-600: #52525b;
+  --gray-700: #3f3f46;
+  --gray-800: #27272a;
+  --gray-900: #18181b;
+  --gray-950: #09090b;
+
+  /* 文本色 - 建筑行业专业灰调 */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #64748b;
+  --text-placeholder: #94a3b8;
+  --text-disabled: #cbd5e1;
+  --text-inverse: #ffffff;
+
+  /* 背景色 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+  --bg-subtle: rgba(100, 116, 139, 0.04);
+  --bg-hover: rgba(100, 116, 139, 0.08);
+  --bg-active: rgba(100, 116, 139, 0.12);
+
+  /* 边框色 */
+  --border-light: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+  --border-focus: #3b82f6;
+  --border-subtle: rgba(100, 116, 139, 0.2);
+
+  /* 阴影系统 */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+
+  /* 品牌阴影 - 专业蓝色调 */
+  --shadow-primary: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+  --shadow-primary-lg: 0 8px 24px 0 rgba(59, 130, 246, 0.3);
+  --shadow-accent: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+
+  /* 玻璃态效果 */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-dark: rgba(26, 26, 46, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-blur: blur(12px);
+
+  /* 圆角系统 */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+
+  /* 间距系统 */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* 字体系统 - Plus Jakarta Sans (企业级 SaaS) */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+
+  /* 字号系统 */
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.25rem;      /* 20px */
+  --text-2xl: 1.5rem;      /* 24px */
+  --text-3xl: 1.875rem;    /* 30px */
+  --text-4xl: 2.25rem;     /* 36px */
+  --text-5xl: 3rem;        /* 48px */
+
+  /* 行高系统 */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 2;
+
+  /* 字重系统 */
+  --font-light: 300;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  /* 过渡动画 */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slower: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 缓动函数 */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-elastic: cubic-bezier(0.68, -0.6, 0.32, 1.6);
+
+  /* Z-Index 层级 */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-toast: 1080;
+}
+
+/* ========================================
+   2. 基础样式重置
+   ======================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* 选择文本样式 */
+::selection {
+  background-color: var(--primary-color);
+  color: var(--text-inverse);
+}
+
+::-moz-selection {
+  background-color: var(--primary-color);
+  color: var(--text-inverse);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
+}
+
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) var(--bg-tertiary);
+}
+
+/* ========================================
+   3. 全局动画
+   ======================================== */
+
+/* 淡入上移 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 淡入下移 */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 淡入左移 */
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 淡入右移 */
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 缩放淡入 */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 脉冲效果 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* 弹跳效果 */
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 旋转加载 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 渐变流动 */
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* 光晕效果 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* 浮动效果 */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 呼吸效果 */
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.9;
+  }
+}
+
+/* 动画类 */
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s var(--ease-out) forwards;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.6s var(--ease-out) forwards;
+}
+
+.animate-fade-in-left {
+  animation: fadeInLeft 0.6s var(--ease-out) forwards;
+}
+
+.animate-fade-in-right {
+  animation: fadeInRight 0.6s var(--ease-out) forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.4s var(--ease-out) forwards;
+}
+
+.animate-pulse {
+  animation: pulse 2s var(--ease-in-out) infinite;
+}
+
+.animate-bounce {
+  animation: bounce 1s var(--ease-in-out) infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s var(--ease-in-out) infinite;
+}
+
+/* ========================================
+   4. 全局容器样式
+   ======================================== */
+
+.app-container {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  position: relative;
+  overflow: visible;
+}
+
+/* ========================================
+   5. 侧边栏导航样式
+   ======================================== */
+
+.app-sidebar {
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
+  height: 100vh;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: var(--z-fixed);
+  overflow: hidden;
+}
+
+.app-sidebar.collapsed {
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+}
+
+.sidebar-logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar-logo-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 10px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.sidebar-logo-icon img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.sidebar-logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.app-sidebar.collapsed .sidebar-logo-text {
+  opacity: 0;
+  width: 0;
+}
+
+.sidebar-logo-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-logo-subtitle {
+  font-size: 0.6rem;
+  color: rgba(148, 163, 184, 0.8);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 12px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-nav-group {
+  margin-bottom: 8px;
+}
+
+.sidebar-nav-group-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 12px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.2s ease;
+}
+
+.app-sidebar.collapsed .sidebar-nav-group-title {
+  opacity: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: rgba(203, 213, 225, 0.9);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-decoration: none;
+  position: relative;
+  margin-bottom: 2px;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(59, 130, 246, 0.12);
+  color: #e0e7ff;
+}
+
+.sidebar-nav-item.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.15) 100%);
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+.sidebar-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 0 3px 3px 0;
+}
+
+.sidebar-nav-item .nav-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-nav-item .nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.app-sidebar.collapsed .sidebar-nav-item .nav-label {
+  opacity: 0;
+  width: 0;
+}
+
+.sidebar-collapse-btn {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  color: rgba(148, 163, 184, 0.6);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-collapse-btn:hover {
+  color: #a5b4fc;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* ========================================
+   5b. 顶部导航栏样式
+   ======================================== */
+
+.app-top-header {
+  height: 64px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 var(--space-6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  transition: all var(--transition-normal);
+}
+
+.app-top-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.92) 100%);
+  z-index: -1;
+}
+
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.header-breadcrumb .breadcrumb-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.user-avatar {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: 2px solid transparent;
+}
+
+.user-avatar:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-primary);
+}
+
+/* ========================================
+   6. 主内容区域
+   ======================================== */
+
+.app-main-content {
+  flex: 1;
+  overflow: visible;
+  min-height: auto;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========================================
+   7. 页面过渡动画
+   ======================================== */
+
+.transition-wrapper {
+  width: 100%;
+  min-height: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition: all 0.35s var(--ease-out);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+/* ========================================
+   8. 按钮增强样式
+   ======================================== */
+
+/* 主按钮 - 专业蓝 */
+.el-button--primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  border: none !important;
+  font-weight: var(--font-medium) !important;
+  transition: all var(--transition-fast) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.el-button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-primary) !important;
+  opacity: 0.95;
+}
+
+.el-button--primary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* 危险按钮 */
+.el-button--danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  border: none !important;
+  font-weight: var(--font-medium) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.el-button--danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* 成功按钮 */
+.el-button--success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: none !important;
+  font-weight: var(--font-medium) !important;
+}
+
+/* 警告按钮 */
+.el-button--warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border: none !important;
+  font-weight: var(--font-medium) !important;
+}
+
+/* 默认按钮 */
+.el-button--default {
+  background: var(--bg-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  font-weight: var(--font-medium) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.el-button--default:hover {
+  border-color: var(--primary-color) !important;
+  color: var(--primary-color) !important;
+  background: var(--bg-subtle) !important;
+}
+
+/* ========================================
+   9. 卡片增强样式
+   ======================================== */
+
+.el-card {
+  border-radius: var(--radius-xl) !important;
+  border: 1px solid var(--border-light) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all var(--transition-normal) !important;
+  overflow: hidden;
+}
+
+.el-card:hover {
+  box-shadow: var(--shadow-lg) !important;
+  transform: translateY(-2px);
+}
+
+.el-card__header {
+  padding: var(--space-4) var(--space-6) !important;
+  border-bottom: 1px solid var(--border-light) !important;
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, transparent 100%);
+}
+
+.el-card__body {
+  padding: var(--space-6) !important;
+}
+
+/* ========================================
+   10. 输入框增强样式
+   ======================================== */
+
+.el-input__wrapper {
+  border-radius: var(--radius-lg) !important;
+  border: 2px solid var(--border-light) !important;
+  box-shadow: none !important;
+  transition: all var(--transition-fast) !important;
+  background: var(--bg-primary) !important;
+}
+
+.el-input__wrapper:hover {
+  border-color: var(--primary-light) !important;
+}
+
+.el-input__wrapper.is-focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+}
+
+.el-input__inner {
+  font-size: var(--text-base) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-input__inner::placeholder {
+  color: var(--text-placeholder) !important;
+}
+
+/* 文本域 */
+.el-textarea__inner {
+  border-radius: var(--radius-lg) !important;
+  border: 2px solid var(--border-light) !important;
+  transition: all var(--transition-fast) !important;
+  background: var(--bg-primary) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.el-textarea__inner:hover {
+  border-color: var(--primary-light) !important;
+}
+
+.el-textarea__inner:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+  outline: none !important;
+}
+
+/* ========================================
+   11. 下拉菜单增强样式
+   ======================================== */
+
+.el-dropdown-menu {
+  border-radius: var(--radius-xl) !important;
+  border: 1px solid var(--border-light) !important;
+  box-shadow: var(--shadow-xl) !important;
+  padding: var(--space-2) !important;
+  overflow: hidden;
+}
+
+.el-dropdown-menu__item {
+  border-radius: var(--radius-md) !important;
+  margin: var(--space-1) 0 !important;
+  padding: var(--space-3) var(--space-4) !important;
+  transition: all var(--transition-fast) !important;
+  font-weight: var(--font-medium) !important;
+}
+
+.el-dropdown-menu__item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--primary-color) !important;
+}
+
+/* ========================================
+   12. 树形组件增强样式
+   ======================================== */
+
+.el-tree {
+  background: transparent !important;
+}
+
+.el-tree-node__content {
+  border-radius: var(--radius-lg) !important;
+  margin: var(--space-1) 0 !important;
+  padding: var(--space-3) !important;
+  transition: all var(--transition-fast) !important;
+  min-height: 44px !important;
+}
+
+.el-tree-node__content:hover {
+  background: var(--bg-hover) !important;
+}
+
+.el-tree-node.is-current > .el-tree-node__content {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.04) 100%) !important;
+  color: #3b82f6 !important;
+  font-weight: var(--font-medium) !important;
+  box-shadow: inset 3px 0 0 #3b82f6 !important;
+}
+
+/* ========================================
+   13. 表格增强样式
+   ======================================== */
+
+.el-table {
+  border-radius: var(--radius-xl) !important;
+  overflow: hidden !important;
+}
+
+.el-table th.el-table__cell {
+  background: var(--bg-tertiary) !important;
+  font-weight: var(--font-semibold) !important;
+  color: var(--text-secondary) !important;
+}
+
+.el-table td.el-table__cell {
+  transition: background var(--transition-fast) !important;
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--bg-subtle) !important;
+}
+
+.el-table__row:hover td.el-table__cell {
+  background: var(--bg-hover) !important;
+}
+
+/* ========================================
+   14. 对话框增强样式
+   ======================================== */
+
+.el-dialog {
+  border-radius: var(--radius-2xl) !important;
+  overflow: hidden !important;
+  box-shadow: var(--shadow-2xl) !important;
+}
+
+.el-dialog__header {
+  padding: var(--space-5) var(--space-6) !important;
+  border-bottom: 1px solid var(--border-light) !important;
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, transparent 100%);
+}
+
+.el-dialog__title {
+  font-weight: var(--font-semibold) !important;
+  font-size: var(--text-lg) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-dialog__body {
+  padding: var(--space-6) !important;
+}
+
+.el-dialog__footer {
+  padding: var(--space-4) var(--space-6) !important;
+  border-top: 1px solid var(--border-light) !important;
+  background: var(--bg-tertiary);
+}
+
+/* ========================================
+   15. 消息提示增强样式
+   ======================================== */
+
+.el-message {
+  border-radius: var(--radius-xl) !important;
+  border: none !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: var(--space-4) var(--space-5) !important;
+}
+
+.el-message--success {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
+}
+
+.el-message--warning {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+}
+
+.el-message--error {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
+}
+
+.el-message--info {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+}
+
+/* ========================================
+   16. 标签页增强样式
+   ======================================== */
+
+.el-tabs__header {
+  margin-bottom: var(--space-6) !important;
+}
+
+.el-tabs__nav-wrap::after {
+  background-color: var(--border-light) !important;
+}
+
+.el-tabs__item {
+  font-weight: var(--font-medium) !important;
+  transition: all var(--transition-fast) !important;
+  padding: 0 var(--space-6) !important;
+}
+
+.el-tabs__item.is-active {
+  color: var(--primary-color) !important;
+  font-weight: var(--font-semibold) !important;
+}
+
+.el-tabs__active-bar {
+  background: var(--primary-gradient) !important;
+  height: 3px !important;
+  border-radius: var(--radius-full) !important;
+}
+
+/* ========================================
+   17. 进度条增强样式
+   ======================================== */
+
+.el-progress-bar__outer {
+  border-radius: var(--radius-full) !important;
+  background: var(--bg-tertiary) !important;
+}
+
+.el-progress-bar__inner {
+  border-radius: var(--radius-full) !important;
+  background: var(--primary-gradient) !important;
+}
+
+/* ========================================
+   18. 徽章增强样式
+   ======================================== */
+
+.el-badge__content {
+  border-radius: var(--radius-full) !important;
+  font-weight: var(--font-medium) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ========================================
+   19. 头像增强样式
+   ======================================== */
+
+.el-avatar {
+  font-weight: var(--font-medium) !important;
+}
+
+.el-avatar--circle {
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ========================================
+   20. 表单增强样式
+   ======================================== */
+
+.el-form-item__label {
+  font-weight: var(--font-medium) !important;
+  color: var(--text-secondary) !important;
+}
+
+.el-form-item__error {
+  font-size: var(--text-xs) !important;
+  padding-top: var(--space-1) !important;
+}
+
+/* ========================================
+   21. 空状态增强样式
+   ======================================== */
+
+.el-empty {
+  padding: var(--space-12) 0 !important;
+}
+
+.el-empty__description {
+  color: var(--text-tertiary) !important;
+  margin-top: var(--space-4) !important;
+}
+
+/* ========================================
+   22. 开关增强样式
+   ======================================== */
+
+.el-switch.is-checked .el-switch__core {
+  background: var(--primary-gradient) !important;
+  border-color: var(--primary-color) !important;
+}
+
+/* ========================================
+   23. 复选框增强样式
+   ======================================== */
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background: var(--primary-gradient) !important;
+  border-color: var(--primary-color) !important;
+}
+
+/* ========================================
+   24. 单选框增强样式
+   ======================================== */
+
+.el-radio__input.is-checked .el-radio__inner {
+  background: var(--primary-gradient) !important;
+  border-color: var(--primary-color) !important;
+}
+
+/* ========================================
+   25. 分页器增强样式
+   ======================================== */
+
+.el-pagination.is-background .el-pager li:not(.is-disabled).is-active {
+  background: var(--primary-gradient) !important;
+}
+
+/* ========================================
+   26. 工具提示增强样式
+   ======================================== */
+
+.el-tooltip__popper {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* ========================================
+   27. 骨架屏增强样式
+   ======================================== */
+
+.el-skeleton__item {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 37%, var(--bg-tertiary) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+/* ========================================
+   28. 加载状态
+   ======================================== */
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-dots {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--primary-color);
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+
+.loading-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+/* ========================================
+   29. 渐变文字效果
+   ======================================== */
+
+.gradient-text {
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-accent {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-500) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========================================
+   30. 玻璃态效果类
+   ======================================== */
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-dark {
+  background: var(--glass-bg-dark);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ========================================
+   31. 响应式设计
+   ======================================== */
+
+@media (max-width: 1280px) {
+  :root {
+    --space-4: 14px;
+    --space-6: 20px;
+    --space-8: 28px;
+  }
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --text-xl: 1.125rem;
+    --text-2xl: 1.25rem;
+    --text-3xl: 1.5rem;
+  }
+
+  .app-sidebar {
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
+  }
+
+  .app-sidebar .sidebar-logo-text,
+  .app-sidebar .sidebar-nav-group-title,
+  .app-sidebar .sidebar-nav-item .nav-label {
+    opacity: 0;
+    width: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --space-4: 12px;
+    --space-6: 16px;
+    --space-8: 24px;
+  }
+
+  .app-sidebar {
+    display: none;
+  }
+
+  .app-top-header {
+    padding: 0 16px;
+  }
+  }
+
+  .logo h1 {
+    font-size: var(--text-base);
+  }
+
+  .el-card__header {
+    padding: var(--space-3) var(--space-4) !important;
+  }
+
+  .el-card__body {
+    padding: var(--space-4) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .logo h1 {
+    font-size: var(--text-sm);
+  }
+
+  .user-info {
+    gap: var(--space-2);
+  }
+}
+
+/* ========================================
+   32. 暗色模式
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary-color: #94a3b8;
+    --primary-light: #cbd5e1;
+    --primary-dark: #64748b;
+    --primary-gradient: linear-gradient(135deg, #475569 0%, #64748b 100%);
+
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-tertiary: #94a3b8;
+    --text-placeholder: #64748b;
+    --text-disabled: #475569;
+    --text-inverse: #0f172a;
+
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --bg-elevated: #1e293b;
+    --bg-subtle: rgba(148, 163, 184, 0.06);
+    --bg-hover: rgba(148, 163, 184, 0.1);
+    --bg-active: rgba(148, 163, 184, 0.15);
+
+    --border-light: #334155;
+    --border-default: #475569;
+    --border-strong: #64748b;
+    --border-focus: #3b82f6;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    --shadow-primary: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+    --shadow-primary-lg: 0 8px 24px 0 rgba(59, 130, 246, 0.3);
+    --shadow-accent: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+  }
+}
+
+/* 手动暗色模式切换类 */
+html.dark {
+  --primary-color: #94a3b8;
+  --primary-light: #cbd5e1;
+  --primary-dark: #64748b;
+  --primary-gradient: linear-gradient(135deg, #475569 0%, #64748b 100%);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-placeholder: #64748b;
+  --text-disabled: #475569;
+  --text-inverse: #0f172a;
+
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-elevated: #1e293b;
+  --bg-subtle: rgba(148, 163, 184, 0.06);
+  --bg-hover: rgba(148, 163, 184, 0.1);
+  --bg-active: rgba(148, 163, 184, 0.15);
+
+  --border-light: #334155;
+  --border-default: #475569;
+  --border-strong: #64748b;
+  --border-focus: #3b82f6;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow-primary: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+  --shadow-primary-lg: 0 8px 24px 0 rgba(59, 130, 246, 0.3);
+  --shadow-accent: 0 4px 14px 0 rgba(59, 130, 246, 0.25);
+}
+
+/* ========================================
+   33. 打印样式
+   ======================================== */
+
+@media print {
+  .app-sidebar,
+  .app-top-header,
+  .content-footer {
+    display: none !important;
+  }
+
+  .app-container {
+    background: white;
+  }
+
+  .el-card {
+    box-shadow: none !important;
+    border: 1px solid #e5e5e5 !important;
+  }
+}
+
+/* ========================================
+   34. 可访问性增强
+   ======================================== */
+
+/* 焦点可见性 */
+:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  :root {
+    --border-light: #333333;
+    --border-default: #000000;
+    --text-primary: #000000;
+    --text-secondary: #333333;
+  }
+}

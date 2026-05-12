@@ -1,0 +1,192 @@
+# ============================================
+# 统一的.gitignore文件 - LuanShuAgent项目
+# ============================================
+
+# ============================================
+# 后端Java项目相关
+# ============================================
+backend/target/
+backend/.settings/
+backend/.classpath
+backend/.project
+backend/logs/
+*.log
+backend/milvus_data/
+backend/ollama_data/
+backend/chroma_db/
+backend/minio_data/
+backend/data/*
+
+# ============================================
+# 前端项目相关
+# ============================================
+desktop/node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 前端构建输出
+desktop/dist/
+desktop/out/
+desktop/build/
+frontend/dist/
+frontend/.vite/
+frontend/.tmp/
+
+# Electron打包输出
+desktop/*.dmg
+desktop/*.deb
+desktop/*.rpm
+desktop/*.AppImage
+desktop/*.exe
+desktop/*.msi
+desktop/*.zip
+
+# ============================================
+# Python处理服务相关
+# ============================================
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================
+# 通用开发工具文件
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.tmp
+*.temp
+*.cache
+temp/
+test/
+tools/
+
+# ============================================
+# 其他文件
+# ============================================
+coverage/
+.nyc_output
+.npm
+.yarn-integrity
+*.tgz
+.env.local
+.env.production
+dist-ssr/
+*.local
+*.tsbuildinfo
+outputs/
+testmodel/
+models
+
+# 备份文件
+*.bak
+*.backup
+*.old
+*.sqlite3.backup
+
+# ============================================
+# 其他第三方工具
+# ============================================
+
+# Coverage目录
+coverage/
+.nyc_output
+
+# 包管理器缓存
+.npm
+.yarn-integrity
+*.tgz
+
+# 环境变量文件
+.env
+.env.local
+.env.production
+
+# ============================================
+# 构建和部署相关
+# ============================================
+
+# 通用构建输出
+dist/
+build/
+dist-ssr/
+*.local
+
+# TypeScript构建信息
+*.tsbuildinfo
+
+# ============================================
+# 项目特定输出目录
+# ============================================
+
+# 通用输出目录
+outputs/
+data/
+
+# 其他文件
+筑规通软件申请表.md
+筑规通操作手册.md
+私有化部署方案.md
+招聘灵犀V1.0-申请表 - 副本.docx
+一键部署桌面应用方案.md
+WECHAT_INTEGRATION.md
+test.bat
+test_ollama.js
+start.sh
+ngrok.yml
+deploy.sh
+deploy-ssl.sh
+backend/ai-search-logic-analysis.md
+backend/语义验证问题修复.md
+backend/管综原则搜索问题分析.md
+backend/管综原则搜索问题修复.md
+backend/私有化部署指南.md
+backend/生成EXE安装包说明.md
+backend/检查ZIP文件.bat
+backend/查找生成的EXE.bat
+backend/构建前端.bat
+backend/搜索问题全面修复方案.md
+backend/打包部署文件清单.md
+backend/安装程序.bat
+backend/多租户功能实现说明.md
+backend/多用户测试说明.md
+backend/创建部署包.bat
+backend/上下文构建问题修复.md
+backend/一键部署.bat
+backend/knowledge_base/工程图集
+backend/knowledge_base/建筑设计规范
+backend/knowledge_base/湖畔酒店项目
+desktop/
+frontend/node_modules/
+testmodel/
+models
+PDF-Extract-Kit
+需要解决的问题图片目录/
+backend/docker_images/
+backend/私有化部署压缩包.zip
+文档/
+临时文件/

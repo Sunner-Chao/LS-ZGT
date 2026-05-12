@@ -1,0 +1,65 @@
+server:
+  port: 8080
+  
+spring:
+  application:
+    name: luanshu-agent-backend
+  
+  # 生产环境日志配置
+  logging:
+    level:
+      com.luanshuai.agent: INFO
+      org.springframework.security: WARN
+      org.springframework.web: WARN
+      org.springframework.boot: INFO
+      io.netty: WARN
+      io.milvus: WARN
+      io.milvus.client: WARN
+      io.milvus.grpc: WARN
+    file:
+      name: /app/logs/application.log
+    pattern:
+      file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+# 生产环境安全配置
+app:
+  knowledge-base:
+    path: ${KB_PATH:/app/knowledge_base}
+  
+  # Milvus配置
+  milvus:
+    host: milvus-standalone
+    port: 19530
+    username: root
+    password: milvus
+    database: default
+  
+  # JWT配置（生产环境需要更安全的密钥）
+  jwt:
+    secret: ${JWT_SECRET:your-super-secret-jwt-key-change-in-production}
+    expiration: 604800000 # 7天
+  
+  # PDF解析配置
+  pdf:
+    extract:
+      kit:
+        url: http://pdf-extract-kit:8000/api/parse
+        enabled: true
+        
+# 生产环境性能优化
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+

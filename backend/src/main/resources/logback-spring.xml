@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 自定义日志格式，减少冗余信息 -->
+    <appender name="CLEAN" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%-15.15t] %-5level %logger{20} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <root level="INFO">
+        <appender-ref ref="CLEAN"/>
+    </root>
+    
+    <!-- 应用日志使用DEBUG级别 -->
+    <logger name="com.luanshuai.agent" level="DEBUG"/>
+    
+    <!-- 屏蔽Ollama embedding的输出 -->
+    <logger name="io.github.amithkoujalgi.ollama4j" level="WARN"/>
+    <logger name="ollama" level="WARN"/>
+    
+    <!-- 减少Spring框架的冗余日志 -->
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.springframework.web" level="WARN"/>
+    <logger name="org.springframework.boot" level="INFO"/>
+    
+    <!-- 减少Netty的详细日志 -->
+    <logger name="io.netty" level="WARN"/>
+    
+    <!-- 调整 Milvus 客户端日志：总体保持 WARN，但针对 AbstractMilvusGrpcClient（库内部在 describeIndex 返回 index not found 时会以 ERROR 打印）静默处理 -->
+    <logger name="io.milvus" level="WARN"/>
+    <!-- 将具体类静默，避免库内部对短暂的 index-not-found 打出 ERROR 干扰日志 -->
+    <logger name="io.milvus.client.AbstractMilvusGrpcClient" level="OFF"/>
+</configuration> 
