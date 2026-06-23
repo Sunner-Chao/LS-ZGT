@@ -30,6 +30,7 @@ services:
       --port 8080
       --host 0.0.0.0
       -ngl 100
+      --no-mmap
       -c 8192
       --reasoning off
       --reasoning-format deepseek
@@ -69,7 +70,7 @@ services:
       - ./backend/llama-cache/embedding:/root/.cache/llama
     environment:
       - MODEL_PATH=${LLM_EMBEDDING_MODEL_PATH:-/models/gguf/nomic-embed-text-v2-moe.Q4_K_M-gguf/nomic-embed-text-v2-moe.Q4_K_M.gguf}
-    command: -m /models/gguf/nomic-embed-text-v2-moe.Q4_K_M-gguf/nomic-embed-text-v2-moe.Q4_K_M.gguf --port 8080 --host 0.0.0.0 -ngl 100 -c 8192 -b 8192 --embedding
+    command: -m /models/gguf/nomic-embed-text-v2-moe.Q4_K_M-gguf/nomic-embed-text-v2-moe.Q4_K_M.gguf --port 8080 --host 0.0.0.0 -ngl 100 --no-mmap -c 512 -b 512 --embedding
     deploy:
       resources:
         reservations:
@@ -146,6 +147,8 @@ services:
         condition: service_healthy
       docling-service:
         condition: service_started
+      milvus-standalone:
+        condition: service_healthy
 
   # ==================== 文档解析服务 ====================
 
@@ -162,6 +165,7 @@ services:
     volumes:
       - ./backend/knowledge_base:/app/data:ro
       - ./backend/logs:/app/logs
+      - ./backend/docling_service.py:/app/docling_service.py
     environment:
       - PYTHONUNBUFFERED=1
       - PORT=8001
@@ -280,6 +284,8 @@ services:
       - ETCD_AUTO_COMPACTION_RETENTION=1000
       - ETCD_QUOTA_BACKEND_BYTES=4294967296
       - ETCD_SNAPSHOT_COUNT=50000
+      - ETCD_HEARTBEAT_INTERVAL=500
+      - ETCD_ELECTION_TIMEOUT=5000
     volumes:
       - ./backend/milvus_data/etcd:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
@@ -307,6 +313,7 @@ services:
     image: milvusdb/milvus:v2.4.0
     container_name: milvus-standalone
     command: ["milvus", "run", "standalone"]
+    restart: unless-stopped
     environment:
       - ETCD_ENDPOINTS=etcd:2379
       - MINIO_ADDRESS=minio:9000

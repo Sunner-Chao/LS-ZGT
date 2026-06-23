@@ -20,9 +20,12 @@
       <div class="sidebar-section" v-show="!sidebarCollapsed">
         <div class="section-header">
           <span class="section-title">选择知识库</span>
-          <el-button link size="small" @click="goToKnowledgeBase">
-            <el-icon><Setting /></el-icon>
-          </el-button>
+          <div class="section-actions" style="display: flex; align-items: center; gap: 8px;">
+            <el-switch v-model="knowledgeStore.showMdFiles" size="small" />
+            <el-button link size="small" @click="goToKnowledgeBase" title="管理知识库">
+              <el-icon><Setting /></el-icon>
+            </el-button>
+          </div>
         </div>
         <div class="kb-list">
           <div v-if="topLevelKnowledgeBases.length === 0" class="empty-kb">
@@ -128,7 +131,7 @@
             {{ knowledgeStore.currentNode?.name || '智能对话' }}
           </h2>
           <span class="chat-subtitle" v-if="knowledgeStore.currentNode">
-            {{ fileList.length }} 个文档
+            {{ displayFileList.length }} 个文档
           </span>
         </div>
         <div class="header-right">
@@ -434,6 +437,16 @@ const getScoreLabel = (source: SourceItem): string => {
   return '弱相关'
 }
 const fileList = ref<any[]>([])
+
+const displayFileList = computed(() => {
+  if (knowledgeStore.showMdFiles) {
+    return fileList.value
+  }
+  return fileList.value.filter(f => {
+    const name = f.name || f.path || ''
+    return !(name.toLowerCase().endsWith('.md') || name.toLowerCase().endsWith('.markdown'))
+  })
+})
 const messagesRef = ref()
 const inputRef = ref()
 const chatHistories = ref<Array<{ title: string; messages: any[]; time: number }>>([])
@@ -543,7 +556,7 @@ const formatTime = (timestamp: number) => {
 
 // 获取顶层知识库列表（只包含文件夹类型的顶层节点）
 const topLevelKnowledgeBases = computed(() => {
-  return (knowledgeStore.knowledgeBaseTree || []).filter((node: any) => node.type === 'folder')
+  return (knowledgeStore.displayKnowledgeBaseTree || []).filter((node: any) => node.type === 'folder')
 })
 
 // 选择知识库

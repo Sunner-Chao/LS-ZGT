@@ -2163,7 +2163,7 @@ public class ApiController {
                     finalCategory == null ? "null" : finalCategory.isEmpty(), finalKnowledgeBaseId == null ? "null" : finalKnowledgeBaseId.isEmpty());
                 
                 return files
-                .flatMap(file -> {
+                .concatMap(file -> {
                     String filePath = finalTargetPath.isEmpty() ? file.filename() : finalTargetPath + File.separator + file.filename();
                     Path savePath = Paths.get(basePath, filePath);
                     // 防止路径穿越

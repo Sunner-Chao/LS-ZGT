@@ -1,5 +1,5 @@
 # Docling Service Dockerfile
-# 基于 IBM Docling + Python 3.11 + CUDA GPU 支持
+# 基于 IBM Docling + Python 3.10 + CUDA GPU 支持
 # 构建：docker build -f Dockerfile.docling -t docling-service .
 # 运行：docker run -p 8001:8001 --rm docling-service
 
@@ -8,11 +8,13 @@ FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 WORKDIR /app
 
 # 预装系统依赖（Tesseract OCR + 字体支持）
-# 注意：不切换 ubuntu 镜像源，使用默认官方源
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
+# 切换阿里云镜像源加速下载
+RUN sed -i 's@http://.*archive.ubuntu.com@https://mirrors.aliyun.com@g' /etc/apt/sources.list && \
+    sed -i 's@http://.*security.ubuntu.com@https://mirrors.aliyun.com@g' /etc/apt/sources.list && \
+    apt-get -o Acquire::Retries=5 update --fix-missing \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+    python3 \
+    python3-venv \
     python3-pip \
     tesseract-ocr \
     tesseract-ocr-chi-sim \
@@ -22,11 +24,12 @@ RUN apt-get update \
     libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 # 安装 Docling 及依赖
-# 注意：必须用 python3.11 -m pip，避免 pip 误指向系统 python3.10
-RUN /usr/bin/python3.11 -m pip install --no-cache-dir \
+# 注意：Ubuntu 22.04 的 python3.11 是 3.11.0rc1，会导致 torch/transformers 导入失败。
+RUN python3 -m pip install -i https://mirrors.aliyun.com/pypi/simple/ --no-cache-dir --retries 10 --timeout 120 --upgrade pip setuptools wheel \
+    && python3 -m pip install -i https://mirrors.aliyun.com/pypi/simple/ --no-cache-dir --retries 10 --timeout 120 \
     docling \
     flask \
     gunicorn \

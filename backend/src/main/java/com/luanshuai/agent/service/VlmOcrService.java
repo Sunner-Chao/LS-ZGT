@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 
 /**
  * VLM 增强 OCR 服务
@@ -42,6 +43,7 @@ import java.util.*;
 public class VlmOcrService {
 
     private static final Logger log = LoggerFactory.getLogger(VlmOcrService.class);
+    private static final Semaphore VLM_REQUEST_SEMAPHORE = new Semaphore(1);
 
     /** llama-chat 服务的 VLM HTTP 端点（llama.cpp server-cuda） */
     private final String vlmApiUrl;
@@ -298,18 +300,25 @@ public class VlmOcrService {
         payload.put("temperature", 0.1);  // 低温度保证 OCR 准确性
         payload.put("stream", false);
 
-        log.debug("[VLM-OCR] 发送请求到 VLM: mode={}, imageSize={} chars", mode, base64Image.length());
-
-        return webClientBuilder.build()
-                .post()
-                .uri(vlmApiUrl + "/v1/chat/completions")
-                .header("Content-Type", "application/json")
-                .bodyValue(payload)
-                .retrieve()
-                .bodyToMono(String.class)
-                .map(response -> parseVlmResponse(response, fileName))
-                .doOnSuccess(text -> log.info("[VLM-OCR] VLM OCR 成功: {} ({} chars)", fileName, text.length()))
-                .doOnError(e -> log.error("[VLM-OCR] VLM 请求失败: {}", e.getMessage()));
+        return Mono.fromCallable(() -> {
+                    VLM_REQUEST_SEMAPHORE.acquire();
+                    return true;
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ignored -> {
+                    log.debug("[VLM-OCR] 发送请求到 VLM: mode={}, imageSize={} chars", mode, base64Image.length());
+                    return webClientBuilder.build()
+                            .post()
+                            .uri(vlmApiUrl + "/v1/chat/completions")
+                            .header("Content-Type", "application/json")
+                            .bodyValue(payload)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .map(response -> parseVlmResponse(response, fileName))
+                            .doOnSuccess(text -> log.info("[VLM-OCR] VLM OCR 成功: {} ({} chars)", fileName, text.length()))
+                            .doOnError(e -> log.error("[VLM-OCR] VLM 请求失败: {}", e.getMessage()))
+                            .doFinally(signal -> VLM_REQUEST_SEMAPHORE.release());
+                });
     }
 
     /**
@@ -318,13 +327,15 @@ public class VlmOcrService {
     private String buildSystemPrompt(OcrMode mode) {
         return switch (mode) {
             case TEXT -> """
-                    你是一个专业的 OCR 文字识别助手。请准确地从用户提供的图片中提取所有文字内容。
+                    你是一个专业的 OCR 文字识别与文档结构化分析助手。请准确地从用户提供的图片中提取所有文字内容，并将其格式化为具有精确语义结构的 Markdown 格式输出。
                     要求：
-                    - 严格保持原文，不要总结、不要翻译、不要省略
-                    - 保持原有的段落格式和阅读顺序
-                    - 对于表格，尽量以 Markdown 表格形式呈现
-                    - 对于印章、手写体、公式等特殊元素，也请一并提取为文字
-                    - 只输出识别到的文字，不要输出其他解释或评论
+                    - 识别并保留所有的标题层级（使用 #, ##, ### 等 Markdown 语法）
+                    - 保留并还原所有的列表结构（无序列表使用 -, 有序列表使用 1. 2.）
+                    - 对于表格，必须以标准的 Markdown 表格形式呈现（严格对齐列）
+                    - 保持段落结构、换行以及粗体等文本格式
+                    - 严格保持原文内容，不要总结、不要翻译、不要省略任何文字
+                    - 对于印章、手写体、公式等特殊元素，也请尽量识别并以文字形式体现
+                    - 只输出最终识别好的 Markdown 文本，绝不能包含任何解释、寒暄或评论
                     """;
             case TABLE -> """
                     你是一个专业的表格提取助手。请将图片中的表格转换为 Markdown 格式。
@@ -342,7 +353,7 @@ public class VlmOcrService {
      */
     private String buildUserPrompt(OcrMode mode, String fileName) {
         return switch (mode) {
-            case TEXT -> "请准确提取这张图片中的所有文字内容，保持原文格式。文件名：" + fileName;
+            case TEXT -> "请提取这张图片中的所有文字内容，并以包含标题、列表、表格等结构的精准 Markdown 格式输出。严格保持原文内容和排版顺序，不要有任何多余的寒暄。文件名：" + fileName;
             case TABLE -> "请将这张图片中的表格转换为 Markdown 格式。如果不是表格请说明。文件名：" + fileName;
         };
     }
@@ -426,7 +437,7 @@ public class VlmOcrService {
      */
     private Mono<String> processImagesConcurrently(List<BufferedImage> images, OcrMode mode, String fileName) {
         return Flux.fromIterable(images)
-                .flatMap(image -> encodeAndOcr(image, mode, fileName), 2) // 最多 2 页并发
+                .concatMap(image -> encodeAndOcr(image, mode, fileName))
                 .collectList()
                 .map(pages -> String.join("\n\n--- 第 X 页 ---\n\n", pages));
     }

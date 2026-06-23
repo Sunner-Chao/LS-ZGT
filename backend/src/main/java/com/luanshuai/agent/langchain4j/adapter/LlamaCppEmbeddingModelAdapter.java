@@ -32,8 +32,8 @@ public class LlamaCppEmbeddingModelAdapter {
         this.llmService = llmService;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.timeout = Duration.ofSeconds(60);
-        // nomic-embed-text-v2-moe 默认 1024 维
-        this.dimensions = 1024;
+        // 当前 llama-embedding 服务的 /v1/models 返回 n_embd=768
+        this.dimensions = 768;
         log.info("[LlamaCppEmbeddingModelAdapter] Initialized with model={}, dimensions={}",
                 llmService.getEmbeddingModel(), dimensions);
     }

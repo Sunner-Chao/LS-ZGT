@@ -7,6 +7,13 @@ import java.io.FileInputStream; // 文件输入流
 import java.io.IOException; // IO异常
 import java.io.InputStream; // 通用输入流
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import javax.imageio.ImageIO; // Java Image IO
 
@@ -35,6 +42,14 @@ import org.springframework.stereotype.Service; // 标注Service层组件
 @Service // 声明为 Spring 管理的服务组件
 public class FileParserService {
     private static final Logger log = LoggerFactory.getLogger(FileParserService.class); // 日志记录器
+    private static final int PDF_TEXT_PAGE_MIN_EFFECTIVE_CHARS = 80;
+    private static final int PDF_TEXT_PAGE_MIN_EFFECTIVE_LINES = 2;
+    private static final double PDF_TEXT_LAYER_MIN_PAGE_RATIO = 0.30;
+    private static final int PDF_TEXT_LAYER_MIN_TOTAL_CHARS_SHORT = 120;
+    private static final int PDF_TEXT_LAYER_MIN_TOTAL_CHARS_LONG = 400;
+    private static final int PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE = 30;
+    private static final Pattern PDF_PAGE_NUMBER_PATTERN = Pattern.compile(
+            "^[\\s\\-—–_]*(第?\\s*\\d+\\s*(页|/\\s*\\d+)?|\\d+|[ivxlcdmIVXLCDM]+)[\\s\\-—–_]*$");
 
     // ==================== 服务注入 ====================
 
@@ -137,51 +152,155 @@ public class FileParserService {
      * 3. 最终兜底：Apache PDFBox 纯文本提取
      */
     private String parsePdfSmart(File file) throws IOException {
-        // Step 1: 尝试 Docling（擅长原生数字 PDF 和表格）
-        try {
-            log.info("[解析] 尝试使用 Docling 解析 PDF: {}", file.getName());
-            String result = doclingService.parseDocument(file, "markdown").block(Duration.ofSeconds(180));
-            if (result != null && result.trim().length() > 50) {
-                log.info("[解析] Docling 解析成功，内容长度: {}", result.length());
-                return result;
-            }
-        } catch (Exception e) {
-            log.warn("[解析] Docling 解析失败: {}", e.getMessage());
-        }
+        boolean isScanned = isScannedPdf(file);
 
-        // Step 2: 检测是否为扫描版 PDF（文本层贫瘠）→ VLM OCR
-        try {
-            String textLayer = extractTextLayerFast(file);
-            if (textLayer == null || textLayer.trim().length() < 50) {
-                log.info("[解析] PDF 文本层贫瘠，判定为扫描版，尝试 VLM OCR: {}", file.getName());
+        if (isScanned) {
+            log.info("[解析] PDF 文本层贫瘠或判断为扫描版，优先使用 VLM OCR: {}", file.getName());
+            try {
                 String vlmResult = vlmOcrService.ocrPdf(file, VlmOcrService.OcrMode.TEXT)
                         .block(Duration.ofSeconds(300));
                 if (vlmResult != null && vlmResult.trim().length() > 20) {
                     log.info("[解析] VLM OCR 成功，内容长度: {}", vlmResult.length());
                     return vlmResult;
                 }
-            } else {
-                log.info("[解析] PDF 文本层提取成功（{} 字符），使用文本层内容: {}", textLayer.length(), file.getName());
-                return textLayer;
+            } catch (Exception e) {
+                log.warn("[解析] VLM OCR 失败: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("[解析] VLM OCR 失败: {}", e.getMessage());
+            log.warn("[解析] 图片型/扫描版 PDF OCR 结果为空，不使用文本层兜底: {}", file.getName());
+            throw new IOException("图片型/扫描版 PDF OCR 解析失败或结果为空: " + file.getName());
+        } else {
+            log.info("[解析] PDF 包含足够文本层，尝试使用 Docling 解析: {}", file.getName());
+            try {
+                String result = doclingService.parseDocument(file, "markdown").block(Duration.ofSeconds(180));
+                if (result != null && result.trim().length() > 50) {
+                    log.info("[解析] Docling 解析成功，内容长度: {}", result.length());
+                    return result;
+                }
+            } catch (Exception e) {
+                log.warn("[解析] Docling 解析失败: {}", e.getMessage());
+            }
         }
 
-        // Step 3: 最终兜底：Apache PDFBox
-        log.warn("[解析] 所有高级解析器失败，回退到 Apache PDFBox: {}", file.getName());
+        // 兜底：Apache PDFBox
+        log.warn("[解析] 高级解析器失败或未处理，回退到 Apache PDFBox: {}", file.getName());
         return parsePdf(file);
     }
 
-    /**
-     * 快速提取 PDF 文本层（用于判断是否为扫描版）
-     */
-    private String extractTextLayerFast(File file) {
+    private boolean isScannedPdf(File file) {
         try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(file)) {
+            int pages = document.getNumberOfPages();
+            if (pages == 0) return true;
             org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
-            return stripper.getText(document);
+            List<List<String>> pageLines = new ArrayList<>();
+            Map<String, Integer> lineFrequency = new HashMap<>();
+
+            for (int page = 1; page <= pages; page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                String text = stripper.getText(document);
+                List<String> normalizedLines = normalizePdfTextLines(text);
+                pageLines.add(normalizedLines);
+
+                Set<String> uniqueLines = new HashSet<>(normalizedLines);
+                for (String line : uniqueLines) {
+                    lineFrequency.merge(line, 1, Integer::sum);
+                }
+            }
+
+            int repeatedLineThreshold = Math.max(3, (int) Math.ceil(pages * PDF_TEXT_LAYER_MIN_PAGE_RATIO));
+            Set<String> repeatedLines = new HashSet<>();
+            for (Map.Entry<String, Integer> entry : lineFrequency.entrySet()) {
+                if (entry.getValue() >= repeatedLineThreshold) {
+                    repeatedLines.add(entry.getKey());
+                }
+            }
+
+            int meaningfulPages = 0;
+            int totalEffectiveChars = 0;
+            int maxEffectiveChars = 0;
+            for (List<String> lines : pageLines) {
+                PdfPageTextStats stats = getEffectivePdfPageTextStats(lines, repeatedLines);
+                totalEffectiveChars += stats.effectiveChars;
+                maxEffectiveChars = Math.max(maxEffectiveChars, stats.effectiveChars);
+                if (stats.isMeaningfulTextPage()) {
+                    meaningfulPages++;
+                }
+            }
+
+            int minMeaningfulPages = pages <= 2
+                    ? 1
+                    : Math.max(2, (int) Math.ceil(pages * PDF_TEXT_LAYER_MIN_PAGE_RATIO));
+            int minTotalEffectiveChars = pages <= 2
+                    ? PDF_TEXT_LAYER_MIN_TOTAL_CHARS_SHORT
+                    : Math.max(PDF_TEXT_LAYER_MIN_TOTAL_CHARS_LONG, pages * PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE);
+            boolean hasEffectiveTextLayer = meaningfulPages >= minMeaningfulPages
+                    && totalEffectiveChars >= minTotalEffectiveChars;
+
+            log.info("[解析] PDF 文本层判定: file={}, pages={}, meaningfulPages={}/{}, totalEffectiveChars={}, maxPageEffectiveChars={}, repeatedLines={}, minPages={}, minChars={}, result={}",
+                    file.getName(), pages, meaningfulPages, pages, totalEffectiveChars, maxEffectiveChars,
+                    repeatedLines.size(), minMeaningfulPages, minTotalEffectiveChars,
+                    hasEffectiveTextLayer ? "文本型" : "图片型/扫描版");
+
+            return !hasEffectiveTextLayer;
         } catch (Exception e) {
-            return null;
+            log.warn("[解析] PDF 类型检测失败，默认按图片型/扫描版处理: {} - {}", file.getName(), e.getMessage());
+            return true; // 异常情况默认走更强壮的 VLM
+        }
+    }
+
+    private List<String> normalizePdfTextLines(String text) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return lines;
+        }
+        for (String line : text.split("\\R")) {
+            String normalized = line.replaceAll("\\s+", " ").trim();
+            if (!normalized.isEmpty()) {
+                lines.add(normalized);
+            }
+        }
+        return lines;
+    }
+
+    private PdfPageTextStats getEffectivePdfPageTextStats(List<String> lines, Set<String> repeatedLines) {
+        int effectiveChars = 0;
+        int effectiveLines = 0;
+        for (String line : lines) {
+            if (isIgnorablePdfLine(line, repeatedLines)) {
+                continue;
+            }
+            int compactLength = compactPdfText(line).length();
+            effectiveChars += compactLength;
+            if (compactLength >= 8) {
+                effectiveLines++;
+            }
+        }
+        return new PdfPageTextStats(effectiveChars, effectiveLines);
+    }
+
+    private boolean isIgnorablePdfLine(String line, Set<String> repeatedLines) {
+        String compact = compactPdfText(line);
+        return compact.length() <= 3
+                || repeatedLines.contains(line)
+                || PDF_PAGE_NUMBER_PATTERN.matcher(line).matches();
+    }
+
+    private String compactPdfText(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", "");
+    }
+
+    private static class PdfPageTextStats {
+        private final int effectiveChars;
+        private final int effectiveLines;
+
+        private PdfPageTextStats(int effectiveChars, int effectiveLines) {
+            this.effectiveChars = effectiveChars;
+            this.effectiveLines = effectiveLines;
+        }
+
+        private boolean isMeaningfulTextPage() {
+            return effectiveChars >= PDF_TEXT_PAGE_MIN_EFFECTIVE_CHARS
+                    && effectiveLines >= PDF_TEXT_PAGE_MIN_EFFECTIVE_LINES;
         }
     }
 
@@ -323,24 +442,59 @@ public class FileParserService {
     }
 
     private reactor.core.publisher.Mono<String> parsePdfSmartReactive(File file) {
-        return doclingService.parseDocument(file, "markdown")
-                .flatMap(result -> {
-                    if (result != null && result.trim().length() > 50) {
-                        return reactor.core.publisher.Mono.just(result);
+        return reactor.core.publisher.Mono.fromCallable(() -> isScannedPdf(file))
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .flatMap(isScanned -> {
+                    if (isScanned) {
+                        log.info("[解析] 响应式判定为扫描版 PDF，优先使用 VLM OCR: {}", file.getName());
+                        return vlmOcrService.ocrPdf(file, VlmOcrService.OcrMode.TEXT)
+                                .flatMap(result -> {
+                                    if (result != null && result.trim().length() > 20) {
+                                        return reactor.core.publisher.Mono.just(result);
+                                    }
+                                    return reactor.core.publisher.Mono.<String>empty();
+                                })
+                                .onErrorResume(e -> {
+                                    log.warn("[解析] 响应式图片型/扫描版 PDF OCR 失败，不使用文本层兜底: {} - {}", file.getName(), e.getMessage());
+                                    return reactor.core.publisher.Mono.empty();
+                                })
+                                .switchIfEmpty(reactor.core.publisher.Mono.error(new IOException("图片型/扫描版 PDF OCR 解析失败或结果为空: " + file.getName())));
+                    } else {
+                        log.info("[解析] 响应式判定为文本 PDF，优先使用 Docling: {}", file.getName());
+                        return doclingService.parseDocument(file, "markdown")
+                                .timeout(Duration.ofSeconds(45))
+                                .flatMap(result -> {
+                                    if (result != null && result.trim().length() > 50) {
+                                        return reactor.core.publisher.Mono.just(result);
+                                    }
+                                    return reactor.core.publisher.Mono.<String>empty();
+                                })
+                                .onErrorResume(e -> {
+                                    log.warn("[解析] 文本 PDF Docling 失败，回退到 PDFBox: {} - {}", file.getName(), e.getMessage());
+                                    return reactor.core.publisher.Mono.empty();
+                                })
+                                .switchIfEmpty(reactor.core.publisher.Mono.defer(() -> {
+                                    log.warn("[解析] 文本 PDF Docling 返回空，回退到 PDFBox: {}", file.getName());
+                                    return reactor.core.publisher.Mono.fromCallable(() -> parsePdf(file))
+                                            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+                                }));
                     }
-                    // Docling 结果贫瘠，尝试 VLM OCR
-                    return vlmOcrService.ocrPdf(file, VlmOcrService.OcrMode.TEXT)
-                            .onErrorResume(e -> reactor.core.publisher.Mono.just(""));
                 })
                 .flatMap(result -> {
-                    if (result != null && result.trim().length() > 50) {
+                    if (result != null && result.trim().length() > 20) {
                         return reactor.core.publisher.Mono.just(result);
                     }
-                    // VLM 也失败，兜底 PDFBox
+                    return reactor.core.publisher.Mono.<String>empty();
+                })
+                .switchIfEmpty(reactor.core.publisher.Mono.defer(() -> {
+                    log.warn("[解析] 响应式高级解析均失败，兜底 PDFBox: {}", file.getName());
                     return reactor.core.publisher.Mono.fromCallable(() -> parsePdf(file))
                             .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
-                })
+                }))
                 .onErrorResume(e -> {
+                    if (e instanceof IOException && e.getMessage() != null && e.getMessage().contains("图片型/扫描版 PDF OCR")) {
+                        return reactor.core.publisher.Mono.error(e);
+                    }
                     log.warn("[解析] PDF 响应式解析异常: {}", e.getMessage());
                     return reactor.core.publisher.Mono.fromCallable(() -> parsePdf(file))
                             .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());

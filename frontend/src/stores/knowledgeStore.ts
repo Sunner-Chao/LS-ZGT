@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
@@ -23,6 +23,29 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const currentNode = ref<any>(null)
   const knowledgeBaseTree = ref<any[]>([])
   const isFetchingTree = ref(false)
+  const showMdFiles = ref(localStorage.getItem('showMdFiles') === 'true')
+  watch(showMdFiles, (val) => {
+    localStorage.setItem('showMdFiles', val.toString())
+  })
+  const isMarkdownFile = (name: string) => {
+    if (!name) return false
+    return name.toLowerCase().endsWith('.md') || name.toLowerCase().endsWith('.markdown')
+  }
+
+  const filterTree = (nodes: any[]): any[] => {
+    if (showMdFiles.value) return nodes
+    
+    return nodes
+      .filter(node => node.type === 'folder' || !isMarkdownFile(node.name || node.path || ''))
+      .map(node => {
+        if (node.children) {
+          return { ...node, children: filterTree(node.children) }
+        }
+        return node
+      })
+  }
+
+  const displayKnowledgeBaseTree = computed(() => filterTree(knowledgeBaseTree.value))
 
   // 后台预加载与心跳状态
   const isBackgroundPrefetchActive = ref(false)
@@ -52,6 +75,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         backgroundFetchController = new AbortController()
 
         const response = await axios.get('/api/kb/tree', {
+          params: { _t: Date.now() },
           signal: backgroundFetchController.signal,
           timeout: 30000
         })
@@ -104,8 +128,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     isBackgroundPrefetchActive.value = false
   }
 
-  const fetchKnowledgeBaseTree = async () => {
-    if (isFetchingTree.value) {
+  const fetchKnowledgeBaseTree = async (silent = false, force = false) => {
+    if (isFetchingTree.value && !force) {
       console.info('[KnowledgeStore] fetchKnowledgeBaseTree skipped: already fetching')
       return
     }
@@ -122,33 +146,36 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
     try {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        // 关闭之前的消息
-        if (currentMessage) {
+        if (!silent && currentMessage) {
           currentMessage.close()
         }
         // 显示当前尝试状态（指数退避：2s, 4s, 8s, 16s, 32s）
         const backoffMs = 2000 * Math.pow(2, attempt - 1)
         const label = attempt === 1 ? '正在连接知识库服务...' : `正在重试... (${attempt}/${maxRetries})`
-        currentMessage = ElMessage({
-          message: label,
-          type: 'info',
-          duration: backoffMs - 500,
-          showClose: false
-        })
+        if (!silent) {
+          currentMessage = ElMessage({
+            message: label,
+            type: 'info',
+            duration: backoffMs - 500,
+            showClose: false
+          })
+        }
 
         console.info('[KnowledgeStore] fetch attempt', attempt, 'backoff', backoffMs, 'ms')
         try { localStorage.setItem('kb_fetch_state', JSON.stringify({ status: 'attempt', attempt, time: Date.now() })); } catch (e) {}
         try {
-          const response = await axios.get('/api/kb/tree')
+          const response = await axios.get('/api/kb/tree', {
+            params: { _t: Date.now() }
+          })
           if (response.data.success) {
             knowledgeBaseTree.value = response.data.data || []
             console.info('[KnowledgeStore] fetch success on attempt', attempt)
             try { localStorage.setItem('kb_fetch_state', JSON.stringify({ status: 'success', attempt, time: Date.now() })); } catch (e) {}
             // 关闭状态消息
-            if (currentMessage) {
+            if (!silent && currentMessage) {
               currentMessage.close()
             }
-            ElMessage.success('知识库树加载成功')
+            if (!silent) ElMessage.success('知识库树加载成功')
             isFetchingTree.value = false
             return
           } else {
@@ -166,10 +193,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       console.error('获取知识库树失败:', lastError)
       try { localStorage.setItem('kb_fetch_state', JSON.stringify({ status: 'failed', attempts: maxRetries, time: Date.now(), error: String(lastError) })); } catch (e) {}
       // 关闭状态消息
-      if (currentMessage) {
+      if (!silent && currentMessage) {
         currentMessage.close()
       }
-      ElMessage.error('知识库树加载失败，请检查后端服务是否启动')
+      if (!silent) ElMessage.error('知识库树加载失败，请检查后端服务是否启动')
     } finally {
       isFetchingTree.value = false
     }
@@ -192,7 +219,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
         // 上传成功后刷新知识库树
         console.log('[Frontend Debug] 文件上传成功，刷新知识库树');
-        await fetchKnowledgeBaseTree();
+        await fetchKnowledgeBaseTree(true, true);
 
         // 触发全局文件上传事件
         window.dispatchEvent(new CustomEvent('fileUploaded'));
@@ -316,7 +343,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     try {
       const response = await axios.post('/api/kb/create_folder', {
         path: name
-      })
+      }, { timeout: 15000 })
       if (response.data.success) {
         // 新建成功后清理本地缓存，确保能获取到后端的最新知识库树
         await fetchKnowledgeBaseTree()
@@ -341,7 +368,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const response = await axios.post('/api/kb/rename', {
         src,
         dst: dstPath
-      })
+      }, { timeout: 15000 })
       console.log('[Frontend] Rename response:', response.data);
       if (response.data.success) {
         await fetchKnowledgeBaseTree()
@@ -387,7 +414,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     try {
       const response = await axios.post('/api/kb/delete', {
         path
-      })
+      }, { timeout: 15000 })
       if (response.data.success) {
         await fetchKnowledgeBaseTree()
         ElMessage.success('删除成功')
@@ -437,6 +464,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     findNodeByPath,
     startBackgroundPrefetch,
     stopBackgroundPrefetch,
-    isBackgroundPrefetchActive
+    isBackgroundPrefetchActive,
+    showMdFiles,
+    displayKnowledgeBaseTree
   }
 })

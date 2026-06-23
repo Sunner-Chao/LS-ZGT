@@ -15,6 +15,7 @@ import java.nio.file.Files; // 导入Files工具类用于文件检测等
 import java.nio.file.Path; // 导入Path表示文件路径
 import java.nio.file.Paths; // 导入Paths用于创建Path实例
 import java.util.*; // 导入java.util包中的所有类（List/Map等）
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors; // 导入Collectors用于流的收集
 import com.fasterxml.jackson.databind.ObjectMapper; // 导入Jackson的ObjectMapper用于JSON序列化/反序列化
 import java.time.Duration; // 导入Duration表示时间长度
@@ -36,6 +37,7 @@ public class RagService {
         }
     private static final Logger log = LoggerFactory.getLogger(RagService.class); // 创建类级别的SLF4J日志记录器
     private final ObjectMapper objectMapper = new ObjectMapper(); // 创建Jackson的ObjectMapper实例用于JSON处理
+    private static final Semaphore DOCUMENT_INGEST_SEMAPHORE = new Semaphore(1);
 
     private static final String ANSI_RED = "\u001B[31m"; // 定义红色终端颜色控制序列常量
     private static final String ANSI_BLUE = "\u001B[34m"; // 定义蓝色终端颜色控制序列常量
@@ -541,6 +543,16 @@ public class RagService {
      * - 返回友好的状态信息或抛出异常以便上层重试/报告
      */
     public Mono<String> addDocument(String filePath, String knowledgeBaseId, String tenantId) {
+        return Mono.fromCallable(() -> {
+                DOCUMENT_INGEST_SEMAPHORE.acquire();
+                return true;
+            })
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+            .flatMap(ignored -> addDocumentInternal(filePath, knowledgeBaseId, tenantId)
+                .doFinally(signal -> DOCUMENT_INGEST_SEMAPHORE.release()));
+    }
+
+    private Mono<String> addDocumentInternal(String filePath, String knowledgeBaseId, String tenantId) {
         String effectiveTenantId = (tenantId == null || tenantId.trim().isEmpty()) ? "default" : tenantId.trim();
 
         log.info(blue("[KB_TRACE_BLUE] RagService.addDocument called: tenantId={} knowledgeBaseId='{}' filePath='{}'"),
@@ -678,7 +690,7 @@ public class RagService {
                 }
 
                 // 使用带章节信息的分片器，保留页码和章节信息
-                List<ChunkWithMetadata> chunksWithMetadata = splitDocumentIntoChunksWithMetadata(content, 1000);
+                List<ChunkWithMetadata> chunksWithMetadata = splitDocumentIntoChunksWithMetadata(content, 512);
                 log.info("[分片] 文档分片数量: {}", chunksWithMetadata.size());
                 return chunksWithMetadata;
             })
@@ -700,9 +712,9 @@ public class RagService {
                 List<String> sections = chunksWithMetadata.stream().map(cwm -> cwm.section).collect(Collectors.toList());
                 List<String> sectionPaths = chunksWithMetadata.stream().map(cwm -> cwm.sectionPath).collect(Collectors.toList());
 
-                // 并行处理，提高embedding生成速度
+                // 单路生成 embedding，避免与 VLM OCR/其他上传任务争抢 GPU 导致整批卡住。
                 return Flux.fromIterable(chunks)
-                    .flatMap(chunk -> generateEmbedding(chunk).map(this::toFloatList), 3)
+                    .concatMap(chunk -> generateEmbedding(chunk).map(this::toFloatList))
                     .collectList()
                     .flatMap(embeddings -> {
                         if (embeddings.size() != chunks.size()) {
@@ -1344,7 +1356,11 @@ public class RagService {
                             .trim(); // 去除前后空格
         
         // 智能截断：优先保留完整句子
-        int maxChars = 1024; // 设置最大字符数
+        int maxChars = 512; // 与 llama.cpp embedding 当前 512 上限保持一致，按字符硬限制
+        if (!cleaned.startsWith("Represent this sentence for searching relevant passages:")) { // 如果没有前缀
+            cleaned = "Represent this sentence for searching relevant passages: " + cleaned; // 添加前缀
+        }
+
         if (cleaned.length() > maxChars) { // 如果超过限制
             log.warn("[向量化] 文本长度超过限制，原长度: {}, 截断到: {}", cleaned.length(), maxChars); // 记录警告
             
@@ -1364,11 +1380,6 @@ public class RagService {
                 cleaned = truncated; // 使用强制截断
                 log.info("[向量化] 强制截断，保留长度: {}", cleaned.length()); // 记录截断信息
             }
-        }
-        
-        // 添加特殊标记，确保nomic-embed-text正确处理
-        if (!cleaned.startsWith("Represent this sentence for searching relevant passages:")) { // 如果没有前缀
-            cleaned = "Represent this sentence for searching relevant passages: " + cleaned; // 添加前缀
         }
         
         return cleaned.isEmpty() ? "empty text" : cleaned; // 返回处理后的文本
@@ -2198,46 +2209,61 @@ public class RagService {
         if (combined.length() > 0) {
             result.addAll(splitByParagraphsWithMetadata(combined.toString(), currentPage, chunkSize, sectionStack));
         }
-        // 智能截断：每个超长 chunk 都在语义边界处优雅断开，而非硬切断
-        return result.stream().map(cwm -> smartTruncate(cwm, 1500)).collect(java.util.stream.Collectors.toList());
+        // 每个 chunk 最终不超过 512 字符，优先在句末/逗号/换行等语义边界截断。
+        return result.stream().map(cwm -> smartTruncate(cwm, 512)).collect(java.util.stream.Collectors.toList());
     }
 
     /**
-     * 动态智能截断：当 chunk 超长时，在语义边界处优雅断开，而非硬切断在任意字符处
-     * 断点优先级：句末 > 逗号/顿号 > 换行 > 表格行 > 短语边界 > 强制截断
+     * 优雅截断：优先在语义边界处截断，但最终结果严格不超过 maxLen。
      */
     private ChunkWithMetadata smartTruncate(ChunkWithMetadata cwm, int maxLen) {
         if (cwm.text.length() <= maxLen) return cwm;
 
-        // 1. 正向优先：找 maxLen~maxLen*0.4 区间内的最佳断点（避免断在开头）
-        int startWindow = (int)(maxLen * 0.5);   // 至少保留前50%
-        int endWindow = Math.min(cwm.text.length(), maxLen + 200);
-        int bestPos = -1;
-        int bestPriority = -1;
-
-        for (int pos = startWindow; pos < endWindow; pos++) {
-            int priority = getBreakPriority(cwm.text, pos);
-            if (priority > bestPriority) {
-                bestPriority = priority;
-                bestPos = pos;
-            }
-        }
-
+        String suffix = "…";
+        int contentLimit = Math.max(1, maxLen - suffix.length());
+        String candidate = cwm.text.substring(0, Math.min(contentLimit, cwm.text.length()));
+        int bestBreak = findBestBreak(candidate);
         String result;
-        if (bestPos > 0 && bestPriority >= 0) {
-            result = cwm.text.substring(0, bestPos + 1);
-            if (bestPos < cwm.text.length() - 1) result = result + "…（截）";
+        if (bestBreak > contentLimit * 0.45) {
+            result = candidate.substring(0, bestBreak + 1);
         } else {
-            // 2. 回退：从 maxLen 向前找最近的有效断点
-            result = cwm.text.substring(0, maxLen);
-            int lastBreak = findLastBreak(result);
-            if (lastBreak > maxLen * 0.7) {
-                result = result.substring(0, lastBreak + 1) + "…（截）";
-            } else {
-                result = result + "…（截）";
-            }
+            result = candidate;
+        }
+        result = result + suffix;
+
+        if (result.length() > maxLen) {
+            result = result.substring(0, maxLen);
         }
         return new ChunkWithMetadata(result, cwm.page, cwm.section, cwm.sectionPath);
+    }
+
+    private int findBestBreak(String text) {
+        int best = -1;
+        int bestPriority = -1;
+        for (int i = text.length() - 1; i >= 0; i--) {
+            char ch = text.charAt(i);
+            int priority = -1;
+            if (ch == '。' || ch == '！' || ch == '？' || ch == '.' || ch == '!' || ch == '?') {
+                priority = 5;
+            } else if (ch == '\n') {
+                priority = 4;
+            } else if (ch == '，' || ch == '、' || ch == '；' || ch == ',' || ch == ';') {
+                priority = 3;
+            } else if (ch == ')' || ch == '）' || ch == '】' || ch == '」') {
+                priority = 2;
+            } else if (Character.isWhitespace(ch)) {
+                priority = 1;
+            }
+
+            if (priority > bestPriority) {
+                bestPriority = priority;
+                best = i;
+                if (priority >= 5) {
+                    break;
+                }
+            }
+        }
+        return best;
     }
 
     /** 评估指定位置作为断点的语义价值，返回优先级（越高越好，-1=不可断） */
@@ -2321,16 +2347,12 @@ public class RagService {
                 for (String sentence : cleanParagraph.split("[。！？.!?]")) {
                     sentence = sentence.trim();
                     if (sentence.isEmpty()) continue;
-                    // 【修复瑕疵1】单个句子本身就超过 chunkSize，按字符级滑动切分
+                    // 单个句子本身就超过 chunkSize，按字符级硬切分
                     if (sentence.length() > chunkSize) {
                         int pos = 0;
                         while (pos < sentence.length()) {
                             int end = Math.min(pos + chunkSize, sentence.length());
                             String sub = sentence.substring(pos, end);
-                            // 非最后一片时追加省略号，提示语义被截断
-                            if (end < sentence.length()) {
-                                sub = sub + "…";
-                            }
                             if (!sub.isEmpty()) chunks.add(new ChunkWithMetadata(sub, currentPage, chunkSection, chunkSectionPath));
                             pos = end;
                         }

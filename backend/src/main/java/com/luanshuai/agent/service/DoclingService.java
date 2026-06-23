@@ -136,7 +136,6 @@ public class DoclingService {
                                 String msg = throwable.getMessage();
                                 return msg != null && (
                                         msg.contains("Connection refused") ||
-                                        msg.contains("timeout") ||
                                         msg.contains("Connection reset")
                                 );
                             }))

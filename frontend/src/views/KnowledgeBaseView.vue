@@ -26,13 +26,13 @@
                   <el-icon><FolderOpened /></el-icon>
                   知识库结构
                 </span>
-                <span class="tree-count">{{ (knowledgeStore.knowledgeBaseTree || []).length }} 个知识库</span>
+                <span class="tree-count">{{ (knowledgeStore.displayKnowledgeBaseTree || []).length }} 个知识库</span>
               </div>
             </template>
             
             <div class="tree-container">
               <el-tree
-                :data="knowledgeStore.knowledgeBaseTree"
+                :data="knowledgeStore.displayKnowledgeBaseTree"
                 :props="{ children: 'children', label: 'name' }"
                 @node-click="handleNodeClick"
                 class="knowledge-tree"
@@ -62,7 +62,7 @@
                 </template>
               </el-tree>
               
-              <div v-if="(knowledgeStore.knowledgeBaseTree || []).length === 0" class="empty-tree">
+              <div v-if="(knowledgeStore.displayKnowledgeBaseTree || []).length === 0" class="empty-tree">
                 <el-icon :size="48" color="#94a3b8" />
                 <p>暂无知识库</p>
                 <el-button type="primary" size="small" @click="createKnowledgeBase">
@@ -186,6 +186,7 @@
               </template>
               
               <el-upload
+                ref="uploadRef"
                 class="upload-area"
                 action="/api/upload"
                 name="files"
@@ -195,6 +196,7 @@
                   knowledgeBaseId: knowledgeStore.currentNode?.path || ''
                 }"
                 :before-upload="beforeUpload"
+                :on-progress="handleUploadProgress"
                 :on-success="handleUploadSuccess"
                 :on-error="handleUploadError"
                 :show-file-list="false"
@@ -218,15 +220,16 @@
                 <div class="card-header">
                   <span class="card-title">
                     <el-icon><Document /></el-icon>
-                    文件列表 ({{ fileList.length }})
+                    文件列表 ({{ displayFileList.length }})
                   </span>
                   <div class="header-actions">
+                    <el-switch v-model="knowledgeStore.showMdFiles" active-text="显示解析文件(.md)" size="small" style="margin-right: 12px;" />
                     <el-button @click="loadFileListLocal" icon="Refresh" size="small" plain>刷新</el-button>
                   </div>
                 </div>
               </template>
 
-              <div v-if="fileList.length === 0" class="empty-file-list">
+              <div v-if="displayFileList.length === 0" class="empty-file-list">
                 <el-icon :size="48" color="#94a3b8" />
                 <p>暂无文件</p>
                 <el-button type="primary" size="small" @click="loadFileListLocal">
@@ -237,7 +240,7 @@
 
               <div v-else class="file-grid">
                 <div
-                  v-for="file in fileList"
+                  v-for="file in displayFileList"
                   :key="file.id"
                   class="file-card"
                   :class="{ 'selected': selectedFile?.id === file.id }"
@@ -276,28 +279,56 @@
 
     <!-- 上传进度悬浮窗口 -->
     <Transition name="float-slide">
-      <div v-if="isUploading && !uploadMinimized" class="upload-float-window">
+      <div v-if="isUploading && !uploadMinimized" class="upload-float-window detailed-upload">
         <div class="float-header">
           <div class="float-title">
             <el-icon class="float-icon"><Upload /></el-icon>
-            <span>文件上传中</span>
+            <span>文件处理中... ({{ uploadFiles.filter(f => f.status === 'success').length }}/{{ uploadFiles.length }})</span>
           </div>
           <div class="float-actions">
+            <el-button
+              v-if="hasActiveUploads"
+              link
+              size="small"
+              type="danger"
+              @click="abortAllUploads"
+              icon="Close"
+            >
+              全部终止
+            </el-button>
             <el-button link size="small" @click="uploadMinimized = true" icon="Minus">
               最小化
             </el-button>
           </div>
         </div>
-        <div class="float-content">
-          <div class="upload-progress-bar">
+        <div class="float-content file-progress-list">
+          <div v-for="file in uploadFiles" :key="file.uid" class="file-progress-item">
+            <div class="file-progress-info">
+              <span class="file-name" :title="file.name">{{ file.name }}</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="file-status" :class="file.status">
+                  {{ getUploadFileStatusText(file) }}
+                </span>
+                <el-button
+                  v-if="file.status === 'uploading'"
+                  link
+                  size="small"
+                  type="danger"
+                  @click="abortUpload(file)"
+                  title="终止处理"
+                  style="padding: 0; min-height: auto;"
+                >
+                  <el-icon><Close /></el-icon>
+                </el-button>
+              </div>
+            </div>
             <el-progress
-              :percentage="Math.min(Math.max(uploadProgress, 0), 100)"
+              :percentage="getUploadFileProgress(file)"
+              :status="file.status === 'uploading' ? undefined : file.status"
               :show-text="false"
               :stroke-width="6"
               color="#3b82f6"/>
-            <div class="upload-progress-percentage">{{ Math.min(Math.max(uploadProgress, 0), 100) }}%</div>
           </div>
-          <div class="upload-progress-desc">正在上传文件，请稍候...</div>
         </div>
       </div>
     </Transition>
@@ -306,9 +337,20 @@
     <Transition name="fade">
       <div v-if="isUploading && uploadMinimized" class="upload-float-btn" @click="uploadMinimized = false">
         <el-icon class="float-btn-icon"><Upload /></el-icon>
-        <span class="float-btn-text">上传中 {{ Math.min(Math.max(uploadProgress, 0), 100) }}%</span>
+        <span class="float-btn-text">处理中... {{ Math.min(Math.max(overallProgress, 0), 100) }}%</span>
+        <el-button
+          v-if="hasActiveUploads"
+          class="float-btn-stop"
+          link
+          type="danger"
+          size="small"
+          @click.stop="abortAllUploads"
+          title="全部终止"
+        >
+          <el-icon><Close /></el-icon>
+        </el-button>
         <div class="float-btn-progress">
-          <div class="float-btn-progress-fill" :style="{ width: Math.min(Math.max(uploadProgress, 0), 100) + '%' }"></div>
+          <div class="float-btn-progress-fill" :style="{ width: Math.min(Math.max(overallProgress, 0), 100) + '%' }"></div>
         </div>
       </div>
     </Transition>
@@ -317,9 +359,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import {
   FolderOpened,
   Document,
@@ -344,8 +386,18 @@ const knowledgeStore = useKnowledgeStore()
 const router = useRouter()
 
 // 状态管理
+const uploadRef = ref<any>(null)
 const fileList = ref<any[]>([])
-const uploadProgress = ref(0)
+const uploadFiles = ref<any[]>([])
+let uploadPollTimer: ReturnType<typeof setInterval> | null = null
+let uploadTickerTimer: ReturnType<typeof setInterval> | null = null
+let uploadPolling = false
+const overallProgress = computed(() => {
+  if (uploadFiles.value.length === 0) return 0
+  const total = uploadFiles.value.reduce((acc, f) => acc + getUploadFileProgress(f), 0)
+  return Math.floor(total / uploadFiles.value.length)
+})
+const hasActiveUploads = computed(() => uploadFiles.value.some(f => f.status === 'uploading'))
 const isUploading = ref(false)
 const uploadMinimized = ref(false)
 const refreshing = ref(false)
@@ -354,6 +406,121 @@ const selectedFile = ref<any>(null)
 const previewUrl = ref<string>('')
 const pdfLoading = ref(false)
 const isBatchMode = ref(false)
+
+const displayFileList = computed(() => {
+  if (knowledgeStore.showMdFiles) {
+    return fileList.value
+  }
+  return fileList.value.filter(f => !isMarkdownFile(f))
+})
+
+const ensureNoActiveUploadsBeforeMutation = () => {
+  if (!hasActiveUploads.value) return true
+  ElMessage.warning('当前仍有文件正在上传或解析，请先终止/等待完成后再删除')
+  uploadMinimized.value = false
+  return false
+}
+
+function getUploadFileProgress(file: any) {
+  const raw = Math.min(Math.max(Math.floor(Number(file?.percentage || 0)), 0), 100)
+
+  if (file?.status === 'success') return 100
+  if (file?.status === 'exception') return raw
+  if (file?.stage === 'ingesting') return Math.min(Math.max(raw, 96), 98)
+  if (file?.stage === 'parsing' || raw >= 100) return Math.min(Math.max(raw, 92), 95)
+  return Math.min(raw, 88)
+}
+
+const formatUploadElapsed = (seconds?: number) => {
+  const total = Math.max(Math.floor(seconds || 0), 0)
+  if (total <= 0) return ''
+  if (total < 60) return `${total}s`
+  const minutes = Math.floor(total / 60)
+  const restSeconds = total % 60
+  return `${minutes}m${restSeconds.toString().padStart(2, '0')}s`
+}
+
+function getUploadFileStatusText(file: any) {
+  if (!file) return ''
+
+  if (file.status === 'success') return '解析并入库完成'
+  if (file.status === 'exception') {
+    if (file.cancelled) return '已终止'
+    return file.stageText || '处理失败'
+  }
+
+  const elapsed = formatUploadElapsed(file.elapsedSeconds)
+  const elapsedText = elapsed ? ` · ${elapsed}` : ''
+  const raw = Math.min(Math.max(Math.floor(Number(file.percentage || 0)), 0), 100)
+
+  if (file.stage === 'ingesting') {
+    return `入库中...${elapsedText}`
+  }
+  if (file.stage === 'parsing' || raw >= 100) {
+    return `${file.stageText || '已上传，解析中...'}${elapsedText}`
+  }
+  if (raw <= 0) {
+    return `${file.stageText || '等待上传...'}${elapsedText}`
+  }
+  return `上传中 ${raw}%${elapsedText}`
+}
+
+const refreshActiveUploadElapsed = () => {
+  const now = Date.now()
+  uploadFiles.value.forEach(fileItem => {
+    if (fileItem.status !== 'uploading') return
+    const startedAt = fileItem.startedAt || now
+    fileItem.elapsedSeconds = Math.max(Math.floor((now - startedAt) / 1000), 0)
+    if ((fileItem.percentage || 0) >= 100 && fileItem.stage === 'uploading') {
+      fileItem.stage = 'parsing'
+      fileItem.stageText = '已上传，解析中...'
+    }
+  })
+}
+
+const startUploadActivityLoops = () => {
+  if (!uploadTickerTimer) {
+    uploadTickerTimer = setInterval(refreshActiveUploadElapsed, 1000)
+  }
+  if (!uploadPollTimer) {
+    uploadPollTimer = setInterval(pollUploadKnowledgeRefresh, 2500)
+  }
+  refreshActiveUploadElapsed()
+  pollUploadKnowledgeRefresh()
+}
+
+const stopUploadActivityLoopsIfIdle = () => {
+  if (hasActiveUploads.value) return
+  if (uploadTickerTimer) {
+    clearInterval(uploadTickerTimer)
+    uploadTickerTimer = null
+  }
+  if (uploadPollTimer) {
+    clearInterval(uploadPollTimer)
+    uploadPollTimer = null
+  }
+}
+
+const pollUploadKnowledgeRefresh = async () => {
+  if (uploadPolling || !hasActiveUploads.value) {
+    stopUploadActivityLoopsIfIdle()
+    return
+  }
+
+  uploadPolling = true
+  try {
+    await knowledgeStore.fetchKnowledgeBaseTree(true, true)
+    if (knowledgeStore.currentNode && knowledgeStore.currentNode.type === 'folder') {
+      await loadFileListLocal()
+    }
+    markUploadVisibleArtifacts()
+  } catch (e) {
+    console.error('上传处理中刷新知识库失败:', e)
+  } finally {
+    uploadPolling = false
+    stopUploadActivityLoopsIfIdle()
+  }
+}
 
 
 // 处理节点点击
@@ -406,6 +573,73 @@ const loadFileListLocal = async () => {
   
   const fileListResult = await loadFileList(knowledgeStore.currentNode)
   fileList.value = fileListResult
+}
+
+const getFileBaseName = (name: string) => {
+  const dotIndex = name.lastIndexOf('.')
+  return dotIndex > 0 ? name.slice(0, dotIndex) : name
+}
+
+const getNameFromPath = (name: string) => {
+  const normalized = (name || '').replace(/\\/g, '/')
+  const segments = normalized.split('/').filter(Boolean)
+  return segments.length > 0 ? segments[segments.length - 1] : normalized
+}
+
+const normalizeFileName = (name: string) => (name || '').replace(/\s+/g, '').toLowerCase()
+
+const getComparableFileName = (file: any) => normalizeFileName(getNameFromPath(file?.name || file?.filename || file?.path || ''))
+
+const findTreeNodeByFileName = (nodes: any[], fileName: string): any => {
+  const target = normalizeFileName(fileName)
+  for (const node of nodes || []) {
+    if (node.type === 'file' && getComparableFileName(node) === target) {
+      return node
+    }
+    if (node.children) {
+      const found = findTreeNodeByFileName(node.children, fileName)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+const markUploadVisibleArtifacts = () => {
+  const allFiles = [
+    ...fileList.value,
+    ...flattenTreeFiles(knowledgeStore.knowledgeBaseTree)
+  ]
+
+  uploadFiles.value.forEach(fileItem => {
+    if (fileItem.status !== 'uploading') return
+    const sourceName = fileItem.name
+    const mdName = `${getFileBaseName(sourceName)}.md`
+    const sourceVisible = allFiles.some(f => getComparableFileName(f) === normalizeFileName(sourceName))
+      || !!findTreeNodeByFileName(knowledgeStore.knowledgeBaseTree, sourceName)
+    const mdVisible = allFiles.some(f => getComparableFileName(f) === normalizeFileName(mdName))
+      || !!findTreeNodeByFileName(knowledgeStore.knowledgeBaseTree, mdName)
+
+    if (mdVisible) {
+      fileItem.stage = 'ingesting'
+      fileItem.stageText = '解析文件已生成，正在入库...'
+      fileItem.percentage = Math.max(fileItem.percentage || 0, 96)
+    } else if (sourceVisible && (fileItem.percentage || 0) >= 100) {
+      fileItem.stage = 'parsing'
+      fileItem.stageText = '已上传，正在解析...'
+    }
+  })
+}
+
+const flattenTreeFiles = (nodes: any[]): any[] => {
+  const files: any[] = []
+  const walk = (items: any[]) => {
+    for (const item of items || []) {
+      if (item.type === 'file') files.push(item)
+      if (item.children) walk(item.children)
+    }
+  }
+  walk(nodes)
+  return files
 }
 
 // 创建知识库
@@ -487,6 +721,8 @@ const handleRename = async (node: any) => {
 
 // 删除
 const handleDelete = async (node: any) => {
+  if (!ensureNoActiveUploadsBeforeMutation()) return
+
   try {
     await ElMessageBox.confirm(`确定要删除 "${node.name}" 吗？`, '确认删除', {
       confirmButtonText: '确定',
@@ -494,17 +730,29 @@ const handleDelete = async (node: any) => {
       type: 'warning'
     })
 
-    await knowledgeStore.deleteItem(node.path)
+    const loading = ElLoading.service({
+      lock: true,
+      text: '正在删除...',
+      background: 'rgba(255, 255, 255, 0.7)',
+    })
 
-    // 检查当前节点是否是被删除的节点
-    if (knowledgeStore.currentNode?.path === node.path) {
-      knowledgeStore.setCurrentNode(null) // 清空当前节点
+    try {
+      await knowledgeStore.deleteItem(node.path)
+
+      // 检查当前节点是否是被删除的节点
+      if (knowledgeStore.currentNode?.path === node.path) {
+        knowledgeStore.setCurrentNode(null) // 清空当前节点
+      }
+
+      // 刷新文件列表
+      await loadFileListLocal()
+    } finally {
+      loading.close()
     }
-
-    // 刷新文件列表
-    loadFileListLocal()
   } catch (error) {
-    console.error('删除失败:', error)
+    if (error !== 'cancel') {
+      console.error('删除操作异常:', error)
+    }
   }
 }
 
@@ -750,6 +998,8 @@ const downloadFile = (file: any) => {
 
 // 删除文件
 const deleteFile = async (file: any) => {
+  if (!ensureNoActiveUploadsBeforeMutation()) return
+
   try {
     await ElMessageBox.confirm(`确定要删除文件 "${file.name}" 吗？`, '确认删除', {
       confirmButtonText: '确定',
@@ -828,71 +1078,179 @@ const beforeUpload = (file: File) => {
     return false
   }
   
-  // 开始上传进度
+  // 自动清理之前的记录（如果所有任务都已完成或失败）
+  if (uploadFiles.value.length > 0 && uploadFiles.value.every(f => f.status === 'success' || f.status === 'exception')) {
+    uploadFiles.value = []
+  }
+  if (uploadFiles.value.length === 0) {
+    uploadCompletionAnnounced = false
+  }
+  
   isUploading.value = true
-  uploadProgress.value = 0
+  uploadMinimized.value = false
   
-  // 模拟上传进度
-  const progressInterval = setInterval(() => {
-    if (uploadProgress.value < 90) {
-      const increment = Math.random() * 10 + 5
-      // 确保进度不超过100
-      uploadProgress.value = Math.min(uploadProgress.value + increment, 100)
-    }
-  }, 200)
-  
-  // 保存interval ID，在成功或失败时清除
-  ;(file as any).progressInterval = progressInterval
+  uploadFiles.value.push({
+    uid: (file as any).uid,
+    name: file.name,
+    percentage: 0,
+    status: 'uploading',
+    stage: 'uploading',
+    stageText: '等待上传...',
+    startedAt: Date.now(),
+    elapsedSeconds: 0,
+    cancelled: false,
+    raw: file
+  })
+  startUploadActivityLoops()
   
   return true
 }
 
+// 终止上传
+const abortUpload = (fileItem: any) => {
+  if (!fileItem || fileItem.status !== 'uploading') return
+  if (uploadRef.value && fileItem.raw) {
+    uploadRef.value.abort(fileItem.raw)
+  }
+  fileItem.status = 'exception'
+  fileItem.stage = 'cancelled'
+  fileItem.stageText = '已终止'
+  fileItem.cancelled = true
+  ElMessage.warning(`已取消文件 "${fileItem.name}" 的处理`)
+  checkUploadAllFinished()
+}
+
+// 一键终止所有仍在上传/解析的任务
+const abortAllUploads = () => {
+  const activeFiles = uploadFiles.value.filter(f => f.status === 'uploading')
+  if (activeFiles.length === 0) {
+    ElMessage.info('当前没有正在处理的文件')
+    return
+  }
+
+  activeFiles.forEach(fileItem => {
+    if (uploadRef.value && fileItem.raw) {
+      uploadRef.value.abort(fileItem.raw)
+    }
+    fileItem.status = 'exception'
+    fileItem.stage = 'cancelled'
+    fileItem.stageText = '已终止'
+    fileItem.cancelled = true
+  })
+
+  ElMessage.warning(`已终止 ${activeFiles.length} 个文件处理任务`)
+  checkUploadAllFinished()
+}
+
+// 实时进度
+const handleUploadProgress = (event: any, file: any) => {
+  const target = uploadFiles.value.find(f => f.uid === file.uid)
+  if (target && !target.cancelled) {
+    const percent = Math.min(Math.max(Math.floor(Number(event.percent || 0)), 0), 100)
+    target.percentage = percent
+    if (percent >= 100) {
+      target.stage = 'parsing'
+      target.stageText = '已上传，解析中...'
+    } else {
+      target.stage = 'uploading'
+      target.stageText = '上传中...'
+    }
+  }
+}
+
+// 检查是否全部完成
+const checkUploadAllFinished = () => {
+  const allFinished = uploadFiles.value.every(f => f.status === 'success' || f.status === 'exception')
+  if (uploadFiles.value.length > 0 && allFinished && !uploadCompletionAnnounced) {
+    stopUploadActivityLoopsIfIdle()
+    uploadCompletionAnnounced = true
+    setTimeout(() => {
+      // 保持显示 5 秒钟再最小化，让用户看清状态
+      setTimeout(() => {
+        uploadMinimized.value = true
+      }, 5000)
+
+      ElMessage.success('批量上传与处理完成')
+    }, 1000)
+  }
+}
+
+let uploadCompletionAnnounced = false
+let uploadRefreshQueue = Promise.resolve()
+
+const refreshKnowledgeAfterFileIngest = () => {
+  uploadRefreshQueue = uploadRefreshQueue
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        await knowledgeStore.fetchKnowledgeBaseTree(true, true)
+        if (knowledgeStore.currentNode && knowledgeStore.currentNode.type === 'folder') {
+          await loadFileListLocal()
+        }
+        markUploadVisibleArtifacts()
+        window.dispatchEvent(new CustomEvent('fileUploaded'))
+      } catch (e) {
+        console.error('单文件入库后刷新失败:', e)
+      }
+    })
+  return uploadRefreshQueue
+}
+
 // 上传成功
 const handleUploadSuccess = async (response: any, file: any) => {
-  console.log('文件上传成功:', response)
-  
-  // 清除进度定时器
-  if ((file as any).progressInterval) {
-    clearInterval((file as any).progressInterval)
+  const target = uploadFiles.value.find(f => f.uid === file.uid)
+  if (target?.cancelled) {
+    checkUploadAllFinished()
+    return
   }
-  
-  // 完成上传进度，确保不超过100
-  uploadProgress.value = Math.min(uploadProgress.value, 100)
-  
-  // 延迟关闭进度对话框，让用户看到100%
-  setTimeout(() => {
-    isUploading.value = false
-    uploadMinimized.value = false
-    uploadProgress.value = 0
-    ElMessage.success('文件上传成功')
-    
-    // 上传成功后只刷新知识库树/文件列表；不要自动触发全量向量库同步（会造成冗余甚至重复入库）
-    ;(async () => {
-      try {
-        await knowledgeStore.fetchKnowledgeBaseTree()
-        await loadFileListLocal()
-      } catch (e) {
-        console.error('上传后刷新失败:', e)
-      }
-    })()
-  }, 500)
+
+  if (response && response.success === false) {
+    if (target) {
+      target.percentage = 100
+      target.status = 'exception'
+      target.stage = 'failed'
+      target.stageText = response.message || '处理失败'
+    }
+    ElMessage.error(response.message || `文件 ${file.name} 处理失败`)
+    checkUploadAllFinished()
+    return
+  }
+
+  if (target) {
+    target.percentage = 100
+    target.stage = 'ingesting'
+    target.stageText = '解析已完成，正在刷新知识库...'
+  }
+
+  await refreshKnowledgeAfterFileIngest()
+
+  if (target && !target.cancelled) {
+    target.status = 'success'
+    target.stage = 'done'
+    target.stageText = '解析并入库完成'
+    target.elapsedSeconds = Math.max(Math.floor((Date.now() - (target.startedAt || Date.now())) / 1000), 0)
+  }
+
+  checkUploadAllFinished()
 }
 
 // 上传失败
 const handleUploadError = (error: any, file: any) => {
-  console.error('文件上传失败:', error)
-  
-  // 清除进度定时器
-  if ((file as any).progressInterval) {
-    clearInterval((file as any).progressInterval)
+  const target = uploadFiles.value.find(f => f.uid === file.uid)
+  if (target?.cancelled) {
+    target.status = 'exception'
+    target.stage = 'cancelled'
+    target.stageText = '已终止'
+    checkUploadAllFinished()
+    return
   }
-  
-  // 关闭上传进度，确保进度值合法
-  isUploading.value = false
-    uploadMinimized.value = false
-  uploadProgress.value = Math.min(Math.max(uploadProgress.value, 0), 100)
-  
-  ElMessage.error('文件上传失败')
+  if (target) {
+    target.status = 'exception'
+    target.stage = 'failed'
+    target.stageText = '上传或处理失败'
+  }
+  ElMessage.error(`文件 ${file.name} 上传失败`)
+  checkUploadAllFinished()
 }
 
 
@@ -900,6 +1258,17 @@ onMounted(() => {
   // 知识库树已由登录后后台预加载，此处仅在本地数据为空时触发一次快速加载
   if (!knowledgeStore.knowledgeBaseTree || knowledgeStore.knowledgeBaseTree.length === 0) {
     knowledgeStore.fetchKnowledgeBaseTree()
+  }
+})
+
+onUnmounted(() => {
+  if (uploadTickerTimer) {
+    clearInterval(uploadTickerTimer)
+    uploadTickerTimer = null
+  }
+  if (uploadPollTimer) {
+    clearInterval(uploadPollTimer)
+    uploadPollTimer = null
   }
 })
 </script>
@@ -1747,6 +2116,16 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.float-btn-stop {
+  color: #fecaca !important;
+  padding: 0 !important;
+  min-height: auto !important;
+}
+
+.float-btn-stop:hover {
+  color: #ffffff !important;
+}
+
 .float-btn-progress {
   position: absolute;
   bottom: 0;
@@ -2071,4 +2450,40 @@ onMounted(() => {
   border-color: #409eff !important;
   background: #FFFFFF !important;
 }
+
+.detailed-upload {
+  width: 360px !important;
+}
+.file-progress-list {
+  max-height: 250px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.file-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+}
+.file-name {
+  color: #374151;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.file-status {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+.file-status.success { color: #10b981; }
+.file-status.exception { color: #ef4444; }
 </style>

@@ -74,25 +74,15 @@ public class TesseractOcrService {
         try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(pdfFile)) {
             int pageCount = document.getNumberOfPages();
             org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
-            org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
 
             for (int i = 1; i <= pageCount; i++) {
-                stripper.setStartPage(i);
-                stripper.setEndPage(i);
-                String text = stripper.getText(document);
-
-                if (text == null || text.trim().isEmpty()) {
-                    // 文本为空 → 渲染图片 → OCR
-                    try {
-                        BufferedImage image = renderer.renderImageWithDPI(i - 1, 300);
-                        String ocrText = tesseract.doOCR(image);
-                        result.append(ocrText).append("\n");
-                        log.debug("[Tesseract] PDF 第 {} 页 OCR 完成", i);
-                    } catch (Exception e) {
-                        log.warn("[Tesseract] PDF 第 {} 页 OCR 失败: {}", i, e.getMessage());
-                    }
-                } else {
-                    result.append(text).append("\n");
+                try {
+                    BufferedImage image = renderer.renderImageWithDPI(i - 1, 300);
+                    String ocrText = tesseract.doOCR(image);
+                    result.append(ocrText).append("\n");
+                    log.debug("[Tesseract] PDF 第 {} 页 OCR 完成", i);
+                } catch (Exception e) {
+                    log.warn("[Tesseract] PDF 第 {} 页 OCR 失败: {}", i, e.getMessage());
                 }
             }
         }

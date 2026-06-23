@@ -69,6 +69,21 @@ FROM eclipse-temurin:21-jre-jammy AS runtime
 
 WORKDIR /app
 
+# Tess4J 需要系统 Tesseract 动态库；用于 VLM/Docling 不可用时的 OCR 兜底。
+RUN sed -i 's@http://.*archive.ubuntu.com@https://mirrors.aliyun.com@g' /etc/apt/sources.list && \
+    sed -i 's@http://.*security.ubuntu.com@https://mirrors.aliyun.com@g' /etc/apt/sources.list && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+      tesseract-ocr \
+      tesseract-ocr-chi-sim \
+      tesseract-ocr-eng \
+      libtesseract-dev \
+      libleptonica-dev \
+      fonts-noto-cjk && \
+    mkdir -p /usr/local/share && \
+    ln -sfn /usr/share/tesseract-ocr/4.00/tessdata /usr/local/share/tessdata && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # 最终镜像仅包含运行产物（jar），不包含 src/pom/maven 缓存
 COPY --from=build /app/target/luanshu-agent-backend-1.0.0.jar /app/app.jar
 

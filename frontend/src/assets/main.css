@@ -13,3 +13,28 @@ a,
     background-color: hsla(160, 100%, 37%, 0.2);
   }
 }
+
+/* 解决所有输入框白底白字的问题 (通过覆盖 Element Plus CSS 变量) */
+.el-input,
+.el-textarea,
+.el-message-box__input {
+  --el-input-text-color: #1f2937 !important;
+  --el-input-bg-color: #ffffff !important;
+  --el-input-placeholder-color: #9ca3af !important;
+}
+
+.el-input__inner,
+.el-textarea__inner,
+.el-input__wrapper,
+.el-textarea__wrapper,
+.el-message-box__input .el-input__inner {
+  color: var(--el-input-text-color) !important;
+  background-color: var(--el-input-bg-color) !important;
+  -webkit-text-fill-color: var(--el-input-text-color) !important;
+}
+
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: var(--el-input-placeholder-color) !important;
+  -webkit-text-fill-color: var(--el-input-placeholder-color) !important;
+}
