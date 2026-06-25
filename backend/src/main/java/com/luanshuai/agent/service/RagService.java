@@ -15,6 +15,7 @@ import java.nio.file.Files; // 导入Files工具类用于文件检测等
 import java.nio.file.Path; // 导入Path表示文件路径
 import java.nio.file.Paths; // 导入Paths用于创建Path实例
 import java.util.*; // 导入java.util包中的所有类（List/Map等）
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors; // 导入Collectors用于流的收集
 import com.fasterxml.jackson.databind.ObjectMapper; // 导入Jackson的ObjectMapper用于JSON序列化/反序列化
@@ -38,6 +39,8 @@ public class RagService {
     private static final Logger log = LoggerFactory.getLogger(RagService.class); // 创建类级别的SLF4J日志记录器
     private final ObjectMapper objectMapper = new ObjectMapper(); // 创建Jackson的ObjectMapper实例用于JSON处理
     private static final Semaphore DOCUMENT_INGEST_SEMAPHORE = new Semaphore(1);
+    private static final java.util.regex.Pattern PAGE_MARKER_PATTERN = java.util.regex.Pattern.compile("(?m)^\\s*\\[PAGE:\\s*(\\d+)\\]\\s*$");
+    private final ConcurrentHashMap<String, Map<Integer, String>> printedPageCache = new ConcurrentHashMap<>();
 
     private static final String ANSI_RED = "\u001B[31m"; // 定义红色终端颜色控制序列常量
     private static final String ANSI_BLUE = "\u001B[34m"; // 定义蓝色终端颜色控制序列常量
@@ -709,6 +712,7 @@ public class RagService {
                     .collect(Collectors.toList());
                 List<String> chunks = chunksWithMetadata.stream().map(cwm -> cwm.text).collect(Collectors.toList());
                 List<Integer> pages = chunksWithMetadata.stream().map(cwm -> cwm.page).collect(Collectors.toList());
+                List<String> displayPages = chunksWithMetadata.stream().map(cwm -> cwm.displayPage).collect(Collectors.toList());
                 List<String> sections = chunksWithMetadata.stream().map(cwm -> cwm.section).collect(Collectors.toList());
                 List<String> sectionPaths = chunksWithMetadata.stream().map(cwm -> cwm.sectionPath).collect(Collectors.toList());
 
@@ -730,6 +734,8 @@ public class RagService {
                             metadata.put("source", sourceKey);
                             metadata.put("timestamp", timestamp);
                             metadata.put("page", pages.get(i));
+                            metadata.put("physicalPage", pages.get(i));
+                            metadata.put("displayPage", displayPages.get(i));
                             metadata.put("section", sections.get(i));
                             metadata.put("sectionPath", sectionPaths.get(i));
                             String metadataJson = toJson(metadata);
@@ -767,6 +773,12 @@ public class RagService {
                             int maxAttempts = 3;
                             while (attempts < maxAttempts) {
                                 try {
+                                    if (collectionExisted) {
+                                        boolean oldVectorDeleted = milvusDbService.deleteDocumentsBySource(tenantCollectionName, sourceKey);
+                                        log.info("[入库] 删除旧向量片段: collection={}, source={}, deleted={}",
+                                                tenantCollectionName, sourceKey, oldVectorDeleted);
+                                    }
+
                                     milvusDbService.addDocuments(tenantCollectionName, chunkIds, embeddings, chunks, metadatas);
                                     log.info("[入库] 写入Milvus完成: collection={}, 分片数={}", tenantCollectionName, chunks.size());
 
@@ -780,18 +792,20 @@ public class RagService {
                                     // 同步填充 BM25 内存倒排索引，确保混合检索立即生效
                                     try {
                                         List<Map<String, Object>> bm25Docs = new ArrayList<>();
+                                        bm25Service.removeDocumentsBySource(tenantCollectionName, sourceKey);
                                         for (int i = 0; i < chunks.size(); i++) {
                                             Map<String, Object> doc = new HashMap<>();
                                             doc.put("id", chunkIds.get(i));
                                             doc.put("text", chunks.get(i));
-                                            // 从 metadata JSON 中提取 source
                                             String metaJson = metadatas.get(i);
+                                            doc.put("metadata", metaJson);
+                                            doc.put("collection", tenantCollectionName);
                                             try {
                                                 @SuppressWarnings("unchecked")
                                                 Map<String, Object> meta = objectMapper.readValue(metaJson, Map.class);
                                                 doc.put("source", meta.get("source"));
                                             } catch (Exception e) {
-                                                doc.put("source", "unknown");
+                                                doc.put("source", sourceKey);
                                             }
                                             bm25Docs.add(doc);
                                         }
@@ -1596,6 +1610,112 @@ public class RagService {
         }
     }
 
+    private int parseIntObject(Object value, int fallback) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.toString().trim());
+            } catch (Exception ignore) {}
+        }
+        return fallback;
+    }
+
+    private String asTrimmedString(Object value) {
+        if (value == null) return "";
+        String s = String.valueOf(value).trim();
+        return "null".equalsIgnoreCase(s) ? "" : s;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String lookupPrintedPageLabel(String source, int physicalPage) {
+        if (source == null || source.trim().isEmpty()) {
+            return "";
+        }
+        try {
+            Path mdPath = resolveMarkdownPathForSource(source);
+            if (mdPath == null) {
+                return "";
+            }
+            Map<Integer, String> pageMap = printedPageCache.computeIfAbsent(
+                    mdPath.toAbsolutePath().normalize().toString(),
+                    key -> {
+                        try {
+                            return extractPrintedPageLabels(Files.readString(mdPath));
+                        } catch (Exception e) {
+                            log.debug("[页码映射] 读取 markdown 失败: {} - {}", mdPath, e.getMessage());
+                            return Collections.emptyMap();
+                        }
+                    });
+            return pageMap.getOrDefault(physicalPage, "");
+        } catch (Exception e) {
+            log.debug("[页码映射] 回查印刷页码失败: source={}, page={}, error={}", source, physicalPage, e.getMessage());
+            return "";
+        }
+    }
+
+    private Path resolveMarkdownPathForSource(String source) {
+        try {
+            String normalizedSource = source.replace('\\', '/');
+            String mdSource = normalizedSource;
+            int dot = mdSource.lastIndexOf('.');
+            if (dot > mdSource.lastIndexOf('/')) {
+                mdSource = mdSource.substring(0, dot);
+            }
+            mdSource = mdSource + ".md";
+
+            List<Path> roots = new ArrayList<>();
+            if (appConfig.getKnowledgeBase() != null && appConfig.getKnowledgeBase().getPath() != null) {
+                roots.add(Paths.get(appConfig.getKnowledgeBase().getPath()));
+            }
+            if (appConfig.getTenant() != null && appConfig.getTenant().getTenantKbPath() != null) {
+                roots.add(Paths.get(appConfig.getTenant().getTenantKbPath()));
+            }
+
+            for (Path root : roots) {
+                Path direct = root.resolve(mdSource).normalize();
+                if (Files.exists(direct) && Files.isRegularFile(direct)) {
+                    return direct;
+                }
+            }
+
+            String fileName = mdSource.contains("/") ? mdSource.substring(mdSource.lastIndexOf('/') + 1) : mdSource;
+            String normalizedFileName = normalizeFileNameForMatch(fileName);
+            for (Path root : roots) {
+                if (!Files.exists(root)) {
+                    continue;
+                }
+                try (java.util.stream.Stream<Path> stream = Files.walk(root)) {
+                    Optional<Path> found = stream
+                            .filter(Files::isRegularFile)
+                            .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".md"))
+                            .filter(p -> normalizeFileNameForMatch(p.getFileName().toString()).equals(normalizedFileName))
+                            .findFirst();
+                    if (found.isPresent()) {
+                        return found.get();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[页码映射] 查找 markdown 失败: source={}, error={}", source, e.getMessage());
+        }
+        return null;
+    }
+
+    private String normalizeFileNameForMatch(String name) {
+        if (name == null) return "";
+        return name.replaceAll("[\\s\\-_]", "").toLowerCase(Locale.ROOT);
+    }
+
     /**
      * 根据文档列表构建sources（与原流程保持一致的格式）
      */
@@ -1622,8 +1742,19 @@ public class RagService {
                     metaStr = metaObj != null ? metaObj.toString() : "";
                 }
                 Map<String, Object> meta = parseMetadata(metaStr);
-                src.put("documentName", meta.getOrDefault("source", "未知文档"));
-                src.put("page", meta.getOrDefault("page", 1));
+                String source = String.valueOf(meta.getOrDefault("source", "未知文档"));
+                int physicalPage = parseIntObject(meta.getOrDefault("physicalPage", meta.getOrDefault("page", 1)), 1);
+                String displayPage = firstNonBlank(
+                    asTrimmedString(meta.get("displayPage")),
+                    lookupPrintedPageLabel(source, physicalPage),
+                    String.valueOf(physicalPage)
+                );
+                src.put("documentName", source);
+                // page 保持 PDF 物理页，前端预览接口依赖这个值渲染正确页面。
+                src.put("page", physicalPage);
+                src.put("physicalPage", physicalPage);
+                src.put("displayPage", displayPage);
+                src.put("pageLabel", displayPage);
                 src.put("section", meta.getOrDefault("section", ""));
                 src.put("sectionPath", meta.getOrDefault("sectionPath", ""));
                 // RRF 综合分数（用于排序和显示）
@@ -1689,7 +1820,7 @@ public class RagService {
                 String sectionPath = String.valueOf(s.getOrDefault("sectionPath", ""));
                 String text = String.valueOf(s.getOrDefault("text", ""));
                 String documentName = String.valueOf(s.getOrDefault("documentName", ""));
-                Object pageObj = s.get("page");
+                Object pageObj = s.getOrDefault("displayPage", s.get("page"));
                 String page = pageObj != null ? String.valueOf(pageObj) : "";
                 StringBuilder sb = new StringBuilder();
                 sb.append("- 【来源: ").append(documentName);
@@ -2170,11 +2301,13 @@ public class RagService {
     private static class ChunkWithMetadata {
         final String text;
         final int page;
+        final String displayPage;
         final String section;
         final String sectionPath;
-        ChunkWithMetadata(String text, int page, String section, String sectionPath) {
+        ChunkWithMetadata(String text, int page, String displayPage, String section, String sectionPath) {
             this.text = text;
             this.page = page;
+            this.displayPage = displayPage != null ? displayPage : "";
             this.section = section != null ? section : "";
             this.sectionPath = sectionPath != null ? sectionPath : "";
         }
@@ -2185,30 +2318,41 @@ public class RagService {
      */
     private List<ChunkWithMetadata> splitDocumentIntoChunksWithMetadata(String content, int chunkSize) {
         List<ChunkWithMetadata> result = new ArrayList<>();
+        if (content == null || content.trim().isEmpty()) {
+            return result;
+        }
+
         java.util.regex.Pattern pagePattern = java.util.regex.Pattern.compile("\\[PAGE:\\s*(\\d+)\\]");
+        Map<Integer, String> printedPageLabels = extractPrintedPageLabels(content);
         List<String[]> sectionStack = new ArrayList<>();
-        String[] pageBlocks = content.split("\\[PAGE:");
+
+        java.util.regex.Matcher matcher = pagePattern.matcher(content);
         int currentPage = 1;
-        StringBuilder combined = new StringBuilder();
-        for (int i = 0; i < pageBlocks.length; i++) {
-            if (i == 0) {
-                combined.append(pageBlocks[i]);
-            } else {
-                String block = pageBlocks[i];
-                java.util.regex.Matcher m = pagePattern.matcher("[PAGE:" + block.substring(0, Math.min(10, block.length())));
-                int blockPage = 1;
-                if (m.find()) blockPage = Integer.parseInt(m.group(1));
-                if (combined.length() > 0) {
-                    result.addAll(splitByParagraphsWithMetadata(combined.toString(), currentPage, chunkSize, sectionStack));
-                    combined = new StringBuilder();
-                }
-                currentPage = blockPage;
-                combined.append(block);
+        int cursor = 0;
+        boolean foundPageMarker = false;
+
+        while (matcher.find()) {
+            String beforeMarker = content.substring(cursor, matcher.start());
+            if (!beforeMarker.trim().isEmpty()) {
+                result.addAll(splitByParagraphsWithMetadata(
+                    beforeMarker, currentPage, printedPageLabels.getOrDefault(currentPage, ""), chunkSize, sectionStack));
             }
+            currentPage = Integer.parseInt(matcher.group(1));
+            cursor = matcher.end();
+            foundPageMarker = true;
         }
-        if (combined.length() > 0) {
-            result.addAll(splitByParagraphsWithMetadata(combined.toString(), currentPage, chunkSize, sectionStack));
+
+        String tail = content.substring(cursor);
+        if (!tail.trim().isEmpty()) {
+            result.addAll(splitByParagraphsWithMetadata(
+                tail, currentPage, printedPageLabels.getOrDefault(currentPage, ""), chunkSize, sectionStack));
         }
+
+        if (!foundPageMarker && result.isEmpty()) {
+            result.addAll(splitByParagraphsWithMetadata(
+                content, 1, printedPageLabels.getOrDefault(1, ""), chunkSize, sectionStack));
+        }
+
         // 每个 chunk 最终不超过 512 字符，优先在句末/逗号/换行等语义边界截断。
         return result.stream().map(cwm -> smartTruncate(cwm, 512)).collect(java.util.stream.Collectors.toList());
     }
@@ -2234,7 +2378,7 @@ public class RagService {
         if (result.length() > maxLen) {
             result = result.substring(0, maxLen);
         }
-        return new ChunkWithMetadata(result, cwm.page, cwm.section, cwm.sectionPath);
+        return new ChunkWithMetadata(result, cwm.page, cwm.displayPage, cwm.section, cwm.sectionPath);
     }
 
     private int findBestBreak(String text) {
@@ -2265,6 +2409,114 @@ public class RagService {
         }
         return best;
     }
+
+    private Map<Integer, String> extractPrintedPageLabels(String content) {
+        Map<Integer, String> directLabels = new HashMap<>();
+        List<PageLabelPair> numericPairs = new ArrayList<>();
+        if (content == null || content.isEmpty()) {
+            return directLabels;
+        }
+
+        java.util.regex.Matcher matcher = PAGE_MARKER_PATTERN.matcher(content);
+        List<int[]> markers = new ArrayList<>();
+        while (matcher.find()) {
+            try {
+                markers.add(new int[]{Integer.parseInt(matcher.group(1)), matcher.end(), matcher.start()});
+            } catch (Exception ignore) {}
+        }
+        if (markers.isEmpty()) {
+            return directLabels;
+        }
+
+        for (int i = 0; i < markers.size(); i++) {
+            int page = markers.get(i)[0];
+            int blockStart = markers.get(i)[1];
+            int blockEnd = (i + 1 < markers.size()) ? markers.get(i + 1)[2] : content.length();
+            if (blockStart >= blockEnd) {
+                continue;
+            }
+            String block = content.substring(blockStart, blockEnd);
+            String label = detectPrintedPageLabel(block);
+            if (!label.isEmpty()) {
+                directLabels.put(page, label);
+                try {
+                    int numeric = Integer.parseInt(label);
+                    if (numeric > 0 && numeric < 1000) {
+                        numericPairs.add(new PageLabelPair(page, numeric));
+                    }
+                } catch (Exception ignore) {}
+            }
+        }
+
+        if (numericPairs.isEmpty()) {
+            return directLabels;
+        }
+
+        numericPairs.sort(Comparator.comparingInt(PageLabelPair::physicalPage));
+        List<PageLabelSegment> segments = buildPageLabelSegments(numericPairs);
+        int maxPhysicalPage = markers.stream().mapToInt(m -> m[0]).max().orElse(0);
+        for (int i = 0; i < segments.size(); i++) {
+            PageLabelSegment segment = segments.get(i);
+            int endPhysical = (i + 1 < segments.size())
+                    ? segments.get(i + 1).startPhysicalPage() - 1
+                    : maxPhysicalPage;
+            for (int physical = segment.startPhysicalPage(); physical <= endPhysical; physical++) {
+                int printed = physical + segment.offset();
+                if (printed > 0 && printed < 1000) {
+                    directLabels.putIfAbsent(physical, String.valueOf(printed));
+                }
+            }
+        }
+        return directLabels;
+    }
+
+    private List<PageLabelSegment> buildPageLabelSegments(List<PageLabelPair> numericPairs) {
+        List<PageLabelSegment> segments = new ArrayList<>();
+        PageLabelPair previous = null;
+        for (PageLabelPair pair : numericPairs) {
+            int offset = pair.displayPage() - pair.physicalPage();
+            boolean reset = previous != null && pair.displayPage() <= previous.displayPage();
+            boolean offsetJump = previous != null
+                    && Math.abs(offset - (previous.displayPage() - previous.physicalPage())) > 2;
+            if (previous == null || reset || offsetJump) {
+                int inferredStart = pair.physicalPage() - pair.displayPage() + 1;
+                int previousEnd = segments.isEmpty() ? 0 : segments.get(segments.size() - 1).startPhysicalPage();
+                int start = Math.max(1, inferredStart);
+                if (!segments.isEmpty() && start <= previousEnd) {
+                    start = pair.physicalPage();
+                }
+                segments.add(new PageLabelSegment(start, offset));
+            }
+            previous = pair;
+        }
+        return segments;
+    }
+
+    private String detectPrintedPageLabel(String pageBlock) {
+        if (pageBlock == null || pageBlock.isEmpty()) {
+            return "";
+        }
+        String[] rawLines = pageBlock.split("\\R");
+        List<String> lines = new ArrayList<>();
+        for (String rawLine : rawLines) {
+            String line = rawLine.replace('\u00A0', ' ').trim();
+            if (!line.isEmpty()) {
+                lines.add(line);
+            }
+        }
+        int start = Math.max(0, lines.size() - 10);
+        for (int i = lines.size() - 1; i >= start; i--) {
+            String line = lines.get(i);
+            String normalized = line.replaceAll("[\\s\\-—–_]+", "");
+            if (normalized.matches("\\d{1,3}")) {
+                return normalized;
+            }
+        }
+        return "";
+    }
+
+    private record PageLabelPair(int physicalPage, int displayPage) {}
+    private record PageLabelSegment(int startPhysicalPage, int offset) {}
 
     /** 评估指定位置作为断点的语义价值，返回优先级（越高越好，-1=不可断） */
     private int getBreakPriority(String text, int pos) {
@@ -2307,16 +2559,28 @@ public class RagService {
         return best;
     }
 
-    private List<ChunkWithMetadata> splitByParagraphsWithMetadata(String content, int page, int chunkSize, List<String[]> sectionStack) {
+    private List<ChunkWithMetadata> splitByParagraphsWithMetadata(
+            String content,
+            int page,
+            String displayPage,
+            int chunkSize,
+            List<String[]> sectionStack) {
         List<ChunkWithMetadata> chunks = new ArrayList<>();
         java.util.regex.Pattern headingPattern = java.util.regex.Pattern.compile("^(#{1,6})\\s+(.+)$");
         java.util.regex.Pattern pagePattern = java.util.regex.Pattern.compile("\\[PAGE:\\s*(\\d+)\\]");
         String[] paragraphs = content.split("\n\n");
         StringBuilder currentChunk = new StringBuilder();
         int currentPage = page;
+        String currentDisplayPage = displayPage != null ? displayPage : "";
         String currentSection = "";
         String currentSectionPath = "";
         for (String paragraph : paragraphs) {
+            java.util.regex.Matcher pm = pagePattern.matcher(paragraph);
+            if (pm.find()) {
+                currentPage = Integer.parseInt(pm.group(1));
+                currentDisplayPage = String.valueOf(currentPage);
+            }
+
             for (String line : paragraph.split("\n")) {
                 java.util.regex.Matcher hm = headingPattern.matcher(line.trim());
                 if (hm.find()) {
@@ -2334,14 +2598,13 @@ public class RagService {
                                            .replaceAll("[\\x00-\\x1F\\x7F]", "")
                                            .trim();
             if (cleanParagraph.isEmpty()) continue;
-            java.util.regex.Matcher pm = pagePattern.matcher(paragraph);
-            if (pm.find()) currentPage = Integer.parseInt(pm.group(1));
+
             String chunkSection = currentSection;
             String chunkSectionPath = currentSectionPath;
             if (cleanParagraph.length() > chunkSize) {
                 if (currentChunk.length() > 0) {
                     String chunk = currentChunk.toString().trim();
-                    if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, chunkSection, chunkSectionPath));
+                    if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, currentDisplayPage, chunkSection, chunkSectionPath));
                     currentChunk = new StringBuilder();
                 }
                 for (String sentence : cleanParagraph.split("[。！？.!?]")) {
@@ -2353,12 +2616,12 @@ public class RagService {
                         while (pos < sentence.length()) {
                             int end = Math.min(pos + chunkSize, sentence.length());
                             String sub = sentence.substring(pos, end);
-                            if (!sub.isEmpty()) chunks.add(new ChunkWithMetadata(sub, currentPage, chunkSection, chunkSectionPath));
+                            if (!sub.isEmpty()) chunks.add(new ChunkWithMetadata(sub, currentPage, currentDisplayPage, chunkSection, chunkSectionPath));
                             pos = end;
                         }
                     } else if (currentChunk.length() + sentence.length() > chunkSize) {
                         String chunk = currentChunk.toString().trim();
-                        if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, chunkSection, chunkSectionPath));
+                        if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, currentDisplayPage, chunkSection, chunkSectionPath));
                         currentChunk = new StringBuilder();
                         currentChunk.append(sentence).append("。");
                     } else {
@@ -2368,7 +2631,7 @@ public class RagService {
             } else {
                 if (currentChunk.length() + cleanParagraph.length() > chunkSize) {
                     String chunk = currentChunk.toString().trim();
-                    if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, chunkSection, chunkSectionPath));
+                    if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, currentDisplayPage, chunkSection, chunkSectionPath));
                     currentChunk = new StringBuilder();
                 }
                 currentChunk.append(cleanParagraph).append("\n\n");
@@ -2376,7 +2639,7 @@ public class RagService {
         }
         if (currentChunk.length() > 0) {
             String chunk = currentChunk.toString().trim();
-            if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, currentSection, currentSectionPath));
+            if (!chunk.isEmpty()) chunks.add(new ChunkWithMetadata(chunk, currentPage, currentDisplayPage, currentSection, currentSectionPath));
         }
         return chunks;
     }

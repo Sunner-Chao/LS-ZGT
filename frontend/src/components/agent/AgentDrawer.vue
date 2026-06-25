@@ -32,6 +32,11 @@ const messagesRef = ref<HTMLElement | null>(null)
 const knowledgeStore = useKnowledgeStore()
 let aiMsgIndex = -1 // 当前流式回复所在的索引
 
+const getSourceDisplayPage = (source: any): string => {
+  const page = source?.displayPage ?? source?.pageLabel ?? source?.page ?? ''
+  return String(page).trim()
+}
+
 const SUGGESTIONS = [
   '查询知识库中的文档',
   '帮我总结一下主要内容',
@@ -234,8 +239,8 @@ const handleSuggestion = (text: string) => {
                   :key="idx"
                   class="source-item"
                 >
-                  <span class="source-name">{{ src.name || src.filename }}</span>
-                  <span v-if="src.page" class="source-page">P{{ src.page }}</span>
+                  <span class="source-name">{{ src.documentName || src.name || src.filename || '未知文档' }}</span>
+                  <span v-if="getSourceDisplayPage(src)" class="source-page">P{{ getSourceDisplayPage(src) }}</span>
                 </div>
               </div>
             </div>

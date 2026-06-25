@@ -601,6 +601,7 @@ public class FileParserService {
             int pageCount = document.getNumberOfPages();
             PDFTextStripper stripper = new PDFTextStripper();
             for (int i = 1; i <= pageCount; i++) {
+                sb.append(String.format(PAGE_SEPARATOR, i));
                 stripper.setStartPage(i);
                 stripper.setEndPage(i);
                 String text = stripper.getText(document);
@@ -610,12 +611,12 @@ public class FileParserService {
                         org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
                         java.awt.image.BufferedImage image = renderer.renderImageWithDPI(i - 1, 300); // 渲染为300 DPI图片
                         String ocrText = tesseractOcrService.doOCR(image);
-                        sb.append(ocrText).append("\n");
+                        sb.append(ocrText == null ? "" : ocrText.trim()).append("\n");
                     } catch (Exception e) {
                         log.warn("[OCR] PDF第{}页识别失败: {}", i, e.getMessage());
                     }
                 } else {
-                    sb.append(text).append("\n");
+                    sb.append(text.trim()).append("\n");
                 }
             }
         }

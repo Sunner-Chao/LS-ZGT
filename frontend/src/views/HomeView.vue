@@ -221,7 +221,7 @@
                         <div class="source-info">
                           <span class="source-name">{{ source.documentName || source.filename || '未知文档' }}</span>
                           <div class="source-meta-row">
-                            <span class="source-meta" v-if="source.page">第 {{ source.page }} 页</span>
+                            <span class="source-meta" v-if="getDisplayPage(source)">第 {{ getDisplayPage(source) }} 页</span>
                             <span class="source-meta section-path" v-if="source.sectionPath">{{ source.sectionPath }}</span>
                             <span class="source-meta" v-if="source.vectorRank">向量 {{ source.vectorRank }}</span>
                             <span class="source-meta" v-if="source.bm25Rank">BM25 {{ source.bm25Rank }}</span>
@@ -306,7 +306,13 @@
           <div class="preview-modal">
             <div class="preview-header">
               <span class="preview-title">{{ previewDocName }}</span>
-              <span class="preview-page" v-if="previewPage">第 {{ previewPage }} 页</span>
+              <span class="preview-page" v-if="previewDisplayPage">第 {{ previewDisplayPage }} 页</span>
+              <span
+                class="preview-physical-page"
+                v-if="previewPhysicalPage && previewDisplayPage !== String(previewPhysicalPage)"
+              >
+                PDF 第 {{ previewPhysicalPage }} 页
+              </span>
               <button class="preview-close" @click="closePagePreview">
                 <el-icon><Close /></el-icon>
               </button>
@@ -384,6 +390,9 @@ interface SourceItem {
   documentName?: string
   filename?: string
   page?: number
+  physicalPage?: number
+  displayPage?: string | number
+  pageLabel?: string | number
   score?: number
   text?: string
   documentId?: string
@@ -436,6 +445,18 @@ const getScoreLabel = (source: SourceItem): string => {
   if (percent > 40) return '一般'
   return '弱相关'
 }
+
+const getDisplayPage = (source: SourceItem): string => {
+  const display = source.displayPage ?? source.pageLabel ?? source.page
+  if (display === undefined || display === null || String(display).trim() === '') return ''
+  return String(display).trim()
+}
+
+const getPhysicalPage = (source: SourceItem): number => {
+  const raw = source.physicalPage ?? source.page ?? source.displayPage ?? 1
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1
+}
 const fileList = ref<any[]>([])
 
 const displayFileList = computed(() => {
@@ -466,7 +487,8 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const previewImageUrl = ref('')
 const previewDocName = ref('')
-const previewPage = ref(1)
+const previewPhysicalPage = ref(1)
+const previewDisplayPage = ref('')
 
 const openPagePreview = async (source: SourceItem) => {
   const docName = source.documentName || source.filename || ''
@@ -476,14 +498,22 @@ const openPagePreview = async (source: SourceItem) => {
   }
 
   previewDocName.value = docName
-  previewPage.value = source.page || 1
+  previewPhysicalPage.value = getPhysicalPage(source)
+  previewDisplayPage.value = getDisplayPage(source) || String(previewPhysicalPage.value)
   previewVisible.value = true
   previewLoading.value = true
   previewError.value = ''
   previewImageUrl.value = ''
 
   // 设置图片 URL，保持 loading 直到 @load 或 @error 触发
-  const apiUrl = `/api/kb/page-preview?source=${encodeURIComponent(docName)}&page=${previewPage.value}`
+  const params = new URLSearchParams({
+    source: docName,
+    page: String(previewPhysicalPage.value)
+  })
+  if (source.text && source.text.trim()) {
+    params.set('highlightText', source.text)
+  }
+  const apiUrl = `/api/kb/page-preview?${params.toString()}`
   previewImageUrl.value = apiUrl
 }
 
@@ -500,6 +530,7 @@ const closePagePreview = () => {
   previewVisible.value = false
   previewImageUrl.value = ''
   previewError.value = ''
+  previewDisplayPage.value = ''
 }
 
 // 初始化
@@ -1794,6 +1825,17 @@ const goToKnowledgeBase = () => {
   color: #6366f1;
   background: #eef2ff;
   padding: 2px 10px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.preview-physical-page {
+  font-size: 12px;
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2px 8px;
   border-radius: 10px;
   font-weight: 500;
   flex-shrink: 0;

@@ -111,7 +111,7 @@
               <div class="sources-list">
                 <div v-for="(source, idx) in msg.sources" :key="idx" class="source-item">
                   <div class="source-title">
-                    {{ source.documentName }} ({{ source.page || 1 }})
+                    {{ source.documentName }} ({{ getSourceDisplayPage(source) }})
                   </div>
                   <div class="source-text">{{ source.text }}</div>
                   <div v-if="source.score !== undefined" class="source-score">
@@ -322,6 +322,11 @@ const processedMessages = computed(() => {
     }
   })
 })
+
+const getSourceDisplayPage = (source: any): string => {
+  const page = source?.displayPage ?? source?.pageLabel ?? source?.page ?? 1
+  return String(page).trim() || '1'
+}
 
 // 选择知识库
 const selectKnowledgeBase = (kb: any) => {

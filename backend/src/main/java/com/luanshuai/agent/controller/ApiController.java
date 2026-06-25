@@ -4,6 +4,7 @@ package com.luanshuai.agent.controller;
 // 引入标准库和 io 操作相关的类
 import java.io.File; // 文件操作
 import java.io.IOException; // IO 异常
+import java.nio.charset.StandardCharsets; // 字符集常量
 import java.nio.file.Files; // 文件系统工具类
 import java.nio.file.Path; // 文件路径表示
 import java.nio.file.Paths; // 构造 Path 的工具
@@ -1820,9 +1821,11 @@ public class ApiController {
     public ResponseEntity<?> previewPdfPage(
             @RequestParam String source,
             @RequestParam(defaultValue = "1") int page,
+            @RequestParam(value = "highlightText", required = false) String highlightText,
             @RequestParam(value = "tenantId", required = false) String tenantId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
-        log.info("[页面预览] source={}, page={}, tenantId={}", source, page, tenantId);
+        log.info("[页面预览] source={}, page={}, tenantId={}, highlight={}",
+                source, page, tenantId, highlightText != null && !highlightText.trim().isEmpty());
 
         // 解析租户ID
         String effectiveTenantId = tenantId;
@@ -1856,8 +1859,16 @@ public class ApiController {
                     .body(Map.of("error", "PDF文件未找到: " + source));
             }
 
-            // 渲染页面为 PNG
-            byte[] pngBytes = pdfPreviewService.renderPage(pdfPath.toString(), page);
+            // 渲染页面为 PNG。若带有原文片段，则尝试红框标注出处。
+            byte[] pngBytes;
+            if (highlightText != null && !highlightText.trim().isEmpty()) {
+                Path markdownPath = findMarkdownFile(kbRootPath, source, pdfPath);
+                String markdownPageText = markdownPath != null ? extractMarkdownPageText(markdownPath, page) : "";
+                pngBytes = pdfPreviewService.renderPageWithHighlight(
+                        pdfPath.toString(), page, highlightText, markdownPageText);
+            } else {
+                pngBytes = pdfPreviewService.renderPage(pdfPath.toString(), page);
+            }
 
             log.info("[页面预览] 渲染成功: source={}, page={}, size={}KB", source, page, pngBytes.length / 1024);
 
@@ -1939,6 +1950,71 @@ public class ApiController {
         }
 
         return null;
+    }
+
+    private Path findMarkdownFile(Path kbRoot, String source, Path pdfPath) throws IOException {
+        if (source == null || source.trim().isEmpty()) return null;
+
+        if (pdfPath != null) {
+            String sibling = pdfPath.getFileName().toString();
+            int dot = sibling.lastIndexOf('.');
+            if (dot > 0) {
+                sibling = sibling.substring(0, dot) + ".md";
+                Path siblingPath = pdfPath.resolveSibling(sibling);
+                if (Files.exists(siblingPath) && Files.isRegularFile(siblingPath)) {
+                    return siblingPath;
+                }
+            }
+        }
+
+        String mdSource = source.replace('\\', '/');
+        int dot = mdSource.lastIndexOf('.');
+        if (dot > mdSource.lastIndexOf('/')) {
+            mdSource = mdSource.substring(0, dot);
+        }
+        mdSource = mdSource + ".md";
+
+        Path direct = kbRoot.resolve(mdSource).normalize();
+        if (Files.exists(direct) && Files.isRegularFile(direct)) return direct;
+
+        String fileName = mdSource.contains("/") ? mdSource.substring(mdSource.lastIndexOf("/") + 1) : mdSource;
+        String searchKey = fileName.replaceAll("[\\s\\-_]", "").toLowerCase();
+        if (Files.exists(kbRoot) && !searchKey.isEmpty()) {
+            try (java.util.stream.Stream<Path> stream = Files.walk(kbRoot)) {
+                return stream
+                        .filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".md"))
+                        .filter(p -> p.getFileName().toString().replaceAll("[\\s\\-_]", "").toLowerCase().equals(searchKey))
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
+        return null;
+    }
+
+    private String extractMarkdownPageText(Path markdownPath, int page) {
+        try {
+            String content = Files.readString(markdownPath, StandardCharsets.UTF_8);
+            java.util.regex.Pattern marker = java.util.regex.Pattern.compile("(?m)^\\s*\\[PAGE:\\s*(\\d+)\\]\\s*$");
+            java.util.regex.Matcher matcher = marker.matcher(content);
+            List<int[]> markers = new ArrayList<>();
+            while (matcher.find()) {
+                try {
+                    markers.add(new int[]{Integer.parseInt(matcher.group(1)), matcher.end(), matcher.start()});
+                } catch (Exception ignore) {}
+            }
+            for (int i = 0; i < markers.size(); i++) {
+                if (markers.get(i)[0] != page) {
+                    continue;
+                }
+                int start = markers.get(i)[1];
+                int end = (i + 1 < markers.size()) ? markers.get(i + 1)[2] : content.length();
+                return content.substring(start, end);
+            }
+        } catch (Exception e) {
+            log.debug("[页面预览] 提取 markdown 页文本失败: {} - {}", markdownPath, e.getMessage());
+        }
+        return "";
     }
 
     @PostMapping("/kb/files/batch-delete")

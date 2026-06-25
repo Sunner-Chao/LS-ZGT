@@ -436,10 +436,11 @@ public class VlmOcrService {
      * 并发处理多张图片（PDF 每页），限制并发数
      */
     private Mono<String> processImagesConcurrently(List<BufferedImage> images, OcrMode mode, String fileName) {
-        return Flux.fromIterable(images)
-                .concatMap(image -> encodeAndOcr(image, mode, fileName))
+        return Flux.range(0, images.size())
+                .concatMap(index -> encodeAndOcr(images.get(index), mode, fileName)
+                        .map(text -> String.format("%n%n[PAGE: %d]%n%n%s", index + 1, text == null ? "" : text.trim())))
                 .collectList()
-                .map(pages -> String.join("\n\n--- 第 X 页 ---\n\n", pages));
+                .map(pages -> String.join("", pages));
     }
 
     /**

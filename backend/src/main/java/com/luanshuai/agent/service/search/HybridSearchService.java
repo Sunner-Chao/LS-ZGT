@@ -86,7 +86,7 @@ public class HybridSearchService {
 
         try {
             // BM25 搜索
-            bm25Results = bm25Service.search(query, bm25TopK);
+            bm25Results = bm25Service.search(query, collectionName, bm25TopK);
         } catch (Exception e) {
             log.warn("[Hybrid] BM25 search failed: {}", e.getMessage());
         }
@@ -181,7 +181,7 @@ public class HybridSearchService {
                 });
 
         reactor.core.publisher.Mono<List<Map<String, Object>>> bm25Mono = reactor.core.publisher.Mono.fromCallable(() -> {
-                    List<Map<String, Object>> bm25Results = bm25Service.search(query, bm25TopK);
+                    List<Map<String, Object>> bm25Results = bm25Service.search(query, collectionName, bm25TopK);
                     return bm25Results;
                 })
                 .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())

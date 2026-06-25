@@ -871,9 +871,10 @@ def _export_markdown_with_page_markers(dl_doc) -> str:
         if not items_with_pages:
             return full_md
 
-        # 在完整 markdown 中找到每个元素文本的位置，插入页码标记
-        # 使用从后向前插入避免偏移
-        markers = []  # (insert_position, page_number)
+        # 在完整 markdown 中找到每个页面第一个元素的位置，插入页码标记。
+        # 旧实现从后往前按 prev_page 去重，会把标记插到每页最后一个元素前，
+        # 导致该页前半部分被归到上一页，参考页码系统性偏移。
+        first_page_positions = {}  # page_number -> insert_position
         search_start = 0
         for page, item_text in items_with_pages:
             if not item_text:
@@ -882,22 +883,20 @@ def _export_markdown_with_page_markers(dl_doc) -> str:
             anchor = item_text[:80]
             pos = full_md.find(anchor, search_start)
             if pos >= 0:
-                markers.append((pos, page))
+                if page > 0 and page not in first_page_positions:
+                    first_page_positions[page] = pos
                 search_start = pos + len(anchor)
             # 找不到就跳过（可能被 Docling 格式化改变了）
 
         # 从后向前插入页码标记（避免位置偏移）
         result = full_md
-        prev_page = 0
-        marker_count = 0  # 调试计数
+        markers = sorted((pos, page) for page, pos in first_page_positions.items())
         for pos, page in reversed(markers):
-            if page > 0 and page != prev_page:
-                marker = PAGE_MARKER % page
-                result = result[:pos] + marker + result[pos:]
-                prev_page = page
-                marker_count += 1
+            marker = PAGE_MARKER % page
+            result = result[:pos] + marker + result[pos:]
 
-        log.info("[PAGE_DEBUG] 插入了 %d 个页码标记, markers 总数: %d", marker_count, len(markers))
+        log.info("[PAGE_DEBUG] 插入了 %d 个页码标记, pages=%s",
+                 len(markers), sorted(first_page_positions.keys())[:20])
 
         # 确保开头有第1页标记
         if not result.lstrip().startswith("[PAGE:"):

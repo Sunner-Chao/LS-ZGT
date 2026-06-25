@@ -32,5 +32,8 @@ tests/
 .dockerignore
 docker-compose*.yml
 
-# Markdown文档（不需要在镜像中）
+# Markdown文档（不需要在镜像中），但保留 Java 源码目录。
 *.md
+!src/**/*.java
+!src/**/*.xml
+!src/**/*.yml
