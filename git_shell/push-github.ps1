@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Message,
     [string]$Version
 )
@@ -17,6 +17,7 @@ try {
 
     . (Join-Path $ScriptRoot 'git-script-profile.ps1')
     $ProfileDefaults = Get-GitScriptProfile
+    Ensure-GitHubOriginInteractive -RemoteName $ProfileDefaults.RemoteName | Out-Null
 
     function Get-CurrentBranch {
         $branchOutput = & git branch --show-current 2>$null
@@ -239,7 +240,7 @@ try {
     $remoteBranchExists = ($LASTEXITCODE -eq 0)
 
     if ($remoteBranchExists) {
-        & git fetch origin ("refs/heads/${branch}:refs/remotes/origin/${branch}")
+        & git fetch origin ("+refs/heads/${branch}:refs/remotes/origin/${branch}")
         if ($LASTEXITCODE -ne 0) {
             throw "git fetch 当前分支失败。请先检查远端仓库地址、SSH 配置或网络。"
         }

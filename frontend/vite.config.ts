@@ -27,15 +27,7 @@ export default defineConfig({
     headers: {
       'X-Frame-Options': 'SAMEORIGIN',
     },
-    allowedHosts: [
-      'localhost',
-      '127.0.0.1',
-      '.ngrok-free.app',
-      '.ngrok-free.dev',
-      '.ngrok.io',
-      'ecobim.cn',
-      '.ecobim.cn',
-    ],
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://backend:8080',
